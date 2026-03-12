@@ -1,28 +1,56 @@
+## 📁 Project Folder Structure
 
-## Folder-Structure
+The **SmartSIEM Collector** is organized into modular components that handle log ingestion, parsing, normalization, and output processing.
+
+## 📁 Folder Structure
+
+```text
 smartsiem-collector/
 │
-├── main.py                 # The central entry point that starts all your listeners
-├── requirements.txt        # List of Python libraries you'll need (e.g., fastapi, pydantic)
-├── .env                    # Environment variables (secret keys, passwords - don't commit this!)
+├── main.py
+├── requirements.txt
+├── .env
 │
-├── config/                 
-│   └── settings.py         # Loads configurations (port numbers, queue addresses)
+├── config/
+│   └── settings.py
 │
-├── listeners/              # STEP 1: Ingestion
+├── listeners/
 │   ├── __init__.py
-│   ├── syslog_server.py    # UDP/TCP socket listener for raw network logs
-│   └── http_api.py         # REST API endpoint for agents sending JSON
+│   ├── syslog_server.py
+│   └── http_api.py
 │
-├── parsers/                # STEP 2: Extraction
+├── parsers/
 │   ├── __init__.py
-│   ├── regex_rules.py      # Stores the regular expressions for different log types
-│   └── base_parser.py      # Logic to match incoming logs to the right regex
+│   ├── regex_rules.py
+│   └── base_parser.py
 │
-├── normalizers/            # STEP 3: JSON Standardization
+├── normalizers/
 │   ├── __init__.py
-│   └── schema.py           # Defines the standard JSON structure (using Pydantic)
+│   └── schema.py
 │
-└── outputs/                # STEP 4: Buffering & Storage
+└── outputs/
     ├── __init__.py
-    └── queue_writer.py     # Code to push the final JSON to a message queue or file
+    └── queue_writer.py
+```
+# Sends processed logs to a message queue or file storage
+
+## 🔄 Processing Pipeline
+
+The collector processes logs in **four main stages**:
+
+1. **Ingestion**  
+   Logs are received through:
+   - Syslog (UDP/TCP)
+   - HTTP API from agents
+
+2. **Parsing**  
+   Raw log messages are analyzed using predefined **regex rules** to extract structured fields.
+
+3. **Normalization**  
+   Parsed logs are converted into a **standard JSON schema** to ensure consistency.
+
+4. **Output**  
+   The normalized logs are sent to:
+   - Message queues (e.g., Kafka, RabbitMQ)
+   - Files
+   - Downstream SIEM components
