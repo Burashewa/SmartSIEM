@@ -160,6 +160,17 @@ body {
   animation: fadeIn 0.4s ease-out both;
 }
 
+.rec-list {
+  margin: 0;
+  padding-left: 18px;
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.rec-list li {
+  margin: 4px 0;
+}
+
 .log-list {
   display: grid;
   gap: 12px;
@@ -224,6 +235,10 @@ body {
 .form {
   display: grid;
   gap: 14px;
+}
+
+.field.hidden {
+  display: none;
 }
 
 label {
