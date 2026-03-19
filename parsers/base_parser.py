@@ -15,7 +15,7 @@ class ParseResult:
     """Result of parsing a single log entry."""
 
     log_type: str
-    fields: dict[str, str]
+    fields: dict[str, str | dict[str, object] | list[object]]
     raw: str
 
     def to_dict(self) -> dict[str, str | dict[str, str]]:
@@ -84,8 +84,15 @@ class BaseParser:
         if not isinstance(data, dict):
             return ParseResult(log_type="json_invalid", fields={}, raw=raw)
 
-        # Flatten to string values for consistent schema
-        json_fields = {k: str(v) for k, v in data.items() if v is not None and v != ""}
+        # Preserve structure for nested dicts/lists (pre-structured SIEM JSON)
+        json_fields: dict[str, str | dict[str, object] | list[object]] = {}
+        for k, v in data.items():
+            if v is None:
+                continue
+            if isinstance(v, (dict, list)):
+                json_fields[k] = v
+            elif v != "":
+                json_fields[k] = str(v)
 
         message = data.get("message")
         if isinstance(message, str) and message.strip():

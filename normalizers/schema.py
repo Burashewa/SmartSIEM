@@ -1,115 +1,209 @@
-"""Standard Pydantic schema for normalized log events."""
+"""Standard Pydantic schema for SIEM-normalized log events."""
 
-from datetime import datetime
-from typing import Any
+import json
+from typing import Any, Literal
 
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, Field
 
 
-class NormalizedLog(BaseModel):
+# ---------------------------------------------------------------------------
+# Restricted value types
+# ---------------------------------------------------------------------------
+
+SourceType = Literal["web", "auth", "api", "system", "file"]
+StatusType = Literal["success", "failed"]
+
+
+class SIEMEvent(BaseModel):
     """
-    Canonical schema for log events after parsing and normalization.
+    Standardized SIEM event schema.
 
-    Maps extracted fields from various log types to a uniform structure
-    suitable for SIEM storage and downstream processing.
+    All optional fields default to None (serializes as null in JSON).
     """
 
-    # Core identification
-    log_type: str = Field(..., description="Parsed log type (e.g. ssh_failed_password)")
-    raw: str = Field(..., description="Original raw log payload")
-    source: str = Field(default="", description="Ingestion source (e.g. udp:192.168.1.1:514)")
-
-    # Timestamp (ISO 8601 preferred)
-    timestamp: str | None = Field(default=None, description="Event timestamp from log or ingestion")
-
-    # Host / network
-    hostname: str | None = Field(default=None, description="Host that generated the log")
-    src_ip: str | None = Field(default=None, description="Source/client IP address")
-    dst_ip: str | None = Field(default=None, description="Destination IP (if applicable)")
-
-    # Identity / auth
-    username: str | None = Field(default=None, description="User involved in the event")
-    runas_user: str | None = Field(default=None, description="Target user (e.g. sudo)")
-
-    # HTTP / web (for access logs)
+    timestamp: str | None = Field(default=None, description="ISO 8601 event timestamp")
+    source: SourceType | None = Field(default=None, description="Event source category")
+    severity: str | None = Field(default=None, description="Severity level (e.g. low, medium, high)")
+    event: str | None = Field(default=None, description="Event type (e.g. authentication)")
+    action: str | None = Field(default=None, description="Action performed (e.g. login)")
+    status: StatusType | None = Field(default=None, description="Outcome: success or failed")
+    user: str | None = Field(default=None, description="User involved in the event")
+    role: str | None = Field(default=None, description="User role")
+    ip: str | None = Field(default=None, description="Client/source IP address")
+    deviceId: str | None = Field(default=None, description="Device identifier")
+    sessionId: str | None = Field(default=None, description="Session identifier")
+    endpoint: str | None = Field(default=None, description="API/HTTP endpoint path")
     method: str | None = Field(default=None, description="HTTP method")
-    path: str | None = Field(default=None, description="Request path")
-    status: str | None = Field(default=None, description="HTTP status code")
-    user_agent: str | None = Field(default=None, description="User-Agent header")
-
-    # Message and metadata
-    message: str | None = Field(default=None, description="Log message or summary")
-    facility: str | None = Field(default=None, description="Syslog facility/priority")
-    program: str | None = Field(default=None, description="Program/process name")
-
-    # Catch-all for unmapped fields (preserves full extraction)
-    extra: dict[str, str] = Field(default_factory=dict, description="Additional extracted fields")
+    resource: str | None = Field(default=None, description="Resource accessed")
+    payload: dict[str, Any] | None = Field(default=None, description="Request/event payload")
+    userAgent: str | None = Field(default=None, description="User-Agent header")
+    latitude: float | None = Field(default=None, description="Geolocation latitude")
+    longitude: float | None = Field(default=None, description="Geolocation longitude")
+    tags: list[str] = Field(default_factory=list, description="Event tags")
+    metadata: dict[str, Any] = Field(default_factory=dict, description="Additional metadata")
+    raw: dict[str, Any] = Field(default_factory=dict, description="Original unparsed log (always included)")
 
     model_config = {"extra": "forbid", "str_strip_whitespace": True}
 
+    def to_siem_json(self) -> str:
+        """
+        Serialize to JSON string with explicit null for unset fields.
+
+        Fields with None values are included as null in the output.
+        """
+        data = self.model_dump(mode="json")
+        return json.dumps(data, ensure_ascii=False, default=str)
+
     def to_json_dict(self) -> dict[str, Any]:
-        """Serialize to dict, excluding None values for compact output."""
-        data = self.model_dump()
-        return {k: v for k, v in data.items() if v is not None and v != ""}
+        """Return dict for pipeline (includes nulls, JSON-serializable)."""
+        return self.model_dump(mode="json")
 
 
 # ---------------------------------------------------------------------------
-# Field mapping: parser output key -> NormalizedLog attribute
+# Mapping: ingestion source -> SIEM source category
+# ---------------------------------------------------------------------------
+
+def _ingestion_source_to_siem(ingestion_source: str) -> SourceType | None:
+    """Map ingestion source (udp:, http:) to SIEM source category."""
+    s = ingestion_source.lower()
+    if s.startswith("http"):
+        return "web"
+    if "api" in s or "rest" in s:
+        return "api"
+    if "auth" in s or "login" in s:
+        return "auth"
+    if s.startswith("udp") or s.startswith("tcp") or "syslog" in s:
+        return "system"
+    return None
+
+
+# ---------------------------------------------------------------------------
+# Mapping: parser output -> SIEMEvent
 # ---------------------------------------------------------------------------
 
 _FIELD_MAP: dict[str, str] = {
-    "client_ip": "src_ip",
-    "hostname": "hostname",
+    "client_ip": "ip",
+    "hostname": "metadata",  # store in metadata
     "timestamp": "timestamp",
-    "username": "username",
-    "runas_user": "runas_user",
-    "user": "username",
-    "message": "message",
-    "priority": "facility",
+    "username": "user",
+    "user": "user",
+    "runas_user": "role",
+    "message": "metadata",
+    "priority": "metadata",
     "method": "method",
-    "path": "path",
+    "path": "endpoint",
     "status": "status",
-    "user_agent": "user_agent",
-    "program": "program",
-    "app_name": "program",
+    "user_agent": "userAgent",
+    "program": "metadata",
+    "app_name": "metadata",
 }
 
 
 def normalize(
     log_type: str,
-    fields: dict[str, str],
-    raw: str,
+    fields: dict[str, Any],
+    raw: str | dict[str, Any],
     source: str = "",
-) -> NormalizedLog:
+) -> SIEMEvent:
     """
-    Map parsed fields to the canonical NormalizedLog schema.
+    Map parsed fields to the SIEM event schema.
 
     Args:
         log_type: Parsed log type from BaseParser.
         fields: Extracted fields from parsing.
-        raw: Original raw log string.
-        source: Ingestion source identifier.
+        raw: Original raw log (string or dict).
+        source: Ingestion source identifier (e.g. udp:192.168.1.1:514).
 
     Returns:
-        Validated NormalizedLog instance.
+        Validated SIEMEvent instance.
     """
+    raw_dict: dict[str, Any] = (
+        {"log": raw} if isinstance(raw, str) else raw
+    )
+
+    siem_source = _ingestion_source_to_siem(source) if source else None
+
+    # Infer status from log_type
+    status: StatusType | None = None
+    if "failed" in log_type or "fail" in log_type or "error" in log_type:
+        status = "failed"
+    elif "accepted" in log_type or "success" in log_type:
+        status = "success"
+
+    # Map parser status if present (may be str or int from HTTP status)
+    parser_status = fields.get("status")
+    if parser_status is not None:
+        ps = str(parser_status).strip()
+        if ps in ("200", "201", "2xx"):
+            status = "success"
+        elif ps and ps.startswith(("4", "5")):
+            status = "failed"
+
     mapped: dict[str, Any] = {
-        "log_type": log_type,
-        "raw": raw,
-        "source": source,
+        "source": siem_source,
+        "event": log_type,
+        "status": status,
+        "tags": [log_type],
+        "metadata": {},
+        "raw": raw_dict,
     }
 
-    extra: dict[str, str] = {}
-
+    # Map known fields to top-level SIEM attrs; rest go to metadata
+    siem_attrs = {f for f in SIEMEvent.model_fields if f not in ("raw", "metadata", "tags")}
     for key, value in fields.items():
-        if not value:
+        if value is None or (isinstance(value, str) and not value.strip()):
             continue
         attr = _FIELD_MAP.get(key, key)
-        if attr in NormalizedLog.model_fields and attr not in ("extra", "log_type", "raw", "source"):
+        # Preserve dict/list for payload, metadata, raw, tags
+        if attr in ("payload", "metadata", "raw") and isinstance(value, dict):
+            mapped[attr] = value
+        elif attr == "tags" and isinstance(value, list):
+            mapped["tags"] = [str(x) for x in value if x is not None]
+        elif attr == "status" and value not in ("success", "failed"):
+            mapped["metadata"][key] = value
+        elif attr in siem_attrs:
             mapped[attr] = value
         else:
-            extra[key] = value
+            mapped["metadata"][key] = value
 
-    mapped["extra"] = extra
+    return SIEMEvent(**mapped)
 
-    return NormalizedLog(**mapped)
+
+# ---------------------------------------------------------------------------
+# Example usage
+# ---------------------------------------------------------------------------
+
+if __name__ == "__main__":
+    event = SIEMEvent(
+        timestamp="2026-03-18T10:30:00Z",
+        source="web",
+        severity="medium",
+        event="authentication",
+        action="login",
+        status="failed",
+        user="admin",
+        role="user",
+        ip="192.168.1.10",
+        deviceId="chrome_windows",
+        sessionId="sess_123",
+        endpoint="/login",
+        method="POST",
+        resource=None,
+        payload={"username": "admin", "password": "' OR 1=1 --"},
+        userAgent="Mozilla/5.0",
+        latitude=9.03,
+        longitude=38.74,
+        tags=["authentication", "web"],
+        metadata={},
+        raw={},
+    )
+    print(event.to_siem_json())
+    print()
+    print("--- from normalize() ---")
+    n = normalize(
+        log_type="ssh_failed_password",
+        fields={"username": "admin", "client_ip": "192.168.1.1", "port": "22"},
+        raw="<34>Oct 11 22:14:15 host sshd: Failed password for admin from 192.168.1.1 port 22",
+        source="udp:10.0.0.1:514",
+    )
+    print(n.to_siem_json())

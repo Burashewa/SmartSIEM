@@ -1,5 +1,5 @@
-"""Normalization package: maps parsed logs to standard schema."""
+"""Normalization package: maps parsed logs to standard SIEM schema."""
 
-from normalizers.schema import NormalizedLog, normalize
+from normalizers.schema import SIEMEvent, normalize
 
-__all__ = ["NormalizedLog", "normalize"]
+__all__ = ["SIEMEvent", "normalize"]
