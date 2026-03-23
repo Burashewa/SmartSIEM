@@ -1,6 +1,7 @@
 """SmartSIEM Collector: central entry point for log ingestion pipeline."""
 
 import asyncio
+import errno
 import logging
 import signal
 import sys
@@ -23,6 +24,7 @@ logger = logging.getLogger(__name__)
 
 def main() -> None:
     """Run the collector pipeline until shutdown."""
+    logger.info("Starting SmartSIEM Collector...")
     settings = Settings()
 
     parser = BaseParser()
@@ -51,7 +53,11 @@ def main() -> None:
         await queue_writer.start()
         await syslog.start()
         await http_api.start()
-        logger.info("SmartSIEM Collector running (syslog UDP/TCP, HTTP API)")
+        output_mode = settings.queue_output
+        logger.info(
+            "SmartSIEM Collector running (syslog UDP/TCP, HTTP API, output=%s)",
+            output_mode,
+        )
 
         shutdown = asyncio.Event()
 
@@ -71,7 +77,7 @@ def main() -> None:
             pass
         finally:
             logger.info("Shutting down...")
-            http_api.stop()
+            await http_api.stop()
             syslog.stop()
             try:
                 await asyncio.shield(queue_writer.stop())
@@ -81,8 +87,23 @@ def main() -> None:
 
     try:
         asyncio.run(run())
-    except (KeyboardInterrupt, asyncio.CancelledError):
-        pass
+    except KeyboardInterrupt:
+        logger.info("Interrupted by user")
+    except asyncio.CancelledError:
+        logger.info("Main task cancelled")
+    except OSError as exc:
+        if exc.errno == errno.EADDRINUSE:
+            logger.error(
+                "Collector startup failed: a required port is already in use. "
+                "Set SYSLOG_UDP_PORT/SYSLOG_TCP_PORT/HTTP_PORT in .env to free ports "
+                "(for example 5514/5515/8080), or stop the service using them."
+            )
+            sys.exit(1)
+        logger.exception("Collector terminated unexpectedly")
+        sys.exit(1)
+    except Exception:
+        logger.exception("Collector terminated unexpectedly")
+        sys.exit(1)
 
 
 if __name__ == "__main__":

@@ -1,4 +1,4 @@
-"""Buffered output: push normalized logs to a queue or file."""
+"""Buffered output: push normalized logs to a queue, file, or MongoDB."""
 
 import asyncio
 import json
@@ -120,6 +120,8 @@ class QueueWriter:
             return
         if backend == "file":
             await self._flush_to_file(batch)
+        elif backend == "mongodb":
+            await self._flush_to_mongo(batch)
         else:
             logger.warning("Unknown queue_output %r; dropping %d items", backend, len(batch))
 
@@ -139,3 +141,26 @@ class QueueWriter:
             logger.debug("Flushed %d logs to %s", len(batch), path)
         except OSError as exc:
             logger.error("Failed to write to %s: %s", path, exc)
+
+    async def _flush_to_mongo(self, batch: list[dict[str, Any]]) -> None:
+        """Store each log in MongoDB with Geo-IP enrichment."""
+
+        def _do_batch() -> None:
+            from database import _prepare_for_mongo
+            from pymongo import MongoClient
+
+            client = MongoClient(self._settings.mongo_uri)
+            try:
+                coll = client["SIEM"]["logs"]
+                for item in batch:
+                    try:
+                        doc = _prepare_for_mongo(item)
+                        coll.insert_one(doc)
+                    except Exception as exc:
+                        logger.error("MongoDB insert failed: %s", exc)
+                logger.debug("Inserted %d logs into MongoDB", len(batch))
+            finally:
+                client.close()
+
+        loop = asyncio.get_event_loop()
+        await loop.run_in_executor(None, _do_batch)

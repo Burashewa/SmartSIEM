@@ -21,8 +21,12 @@ class Settings(BaseSettings):
     http_host: str = "0.0.0.0"
     http_port: int = 8080
 
-    # Queue output ("file" | "null")
+    # Queue output ("file" | "mongodb" | "null")
     queue_output: str = "file"
+    queue_output: str = "mongodb"
     queue_file_path: str = "logs.ndjson"
     queue_batch_size: int = 100
     queue_flush_interval_ms: int = 1000
+
+    # MongoDB (when queue_output="mongodb"); set via MONGO_URI env var
+    mongo_uri: str = "mongodb://localhost:27017"

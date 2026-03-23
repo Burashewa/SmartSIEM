@@ -48,6 +48,7 @@ logs.ndjson
 .settings/
 
 # Testing & coverage
+test_payload.json
 .pytest_cache/
 .coverage
 htmlcov/

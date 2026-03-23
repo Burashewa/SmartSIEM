@@ -1,6 +1,7 @@
 """FastAPI REST listener for JSON log ingestion from agents."""
 
 import asyncio
+import contextlib
 import json
 import logging
 from collections.abc import Awaitable, Callable
@@ -33,6 +34,7 @@ class HttpApiServer:
         self._settings = settings or Settings()
         self._on_message = on_message or self._default_callback
         self._server: Server | None = None
+        self._task: asyncio.Task[None] | None = None
         self._running = False
 
         self._app = FastAPI(title="SmartSIEM Collector HTTP API")
@@ -111,6 +113,7 @@ class HttpApiServer:
             host=self._settings.http_host,
             port=self._settings.http_port,
             log_level="warning",
+            lifespan="off",
         )
         server = Server(config)
         self._server = server
@@ -120,20 +123,32 @@ class HttpApiServer:
             self._settings.http_host,
             self._settings.http_port,
         )
-        await server.serve()
+        try:
+            await server.serve()
+        finally:
+            self._running = False
 
     async def start(self) -> None:
         """Start the HTTP server in the background."""
         if self._running:
             logger.warning("HTTP API already running")
             return
-        asyncio.create_task(self._run_server())
+        self._task = asyncio.create_task(self._run_server())
         await asyncio.sleep(0.1)  # Allow server to bind
 
-    def stop(self) -> None:
+    async def stop(self) -> None:
         """Stop the HTTP server."""
-        self._running = False
         if self._server:
             self._server.should_exit = True
-            self._server = None
+        if self._task:
+            try:
+                await asyncio.wait_for(self._task, timeout=5.0)
+            except asyncio.TimeoutError:
+                self._task.cancel()
+                with contextlib.suppress(asyncio.CancelledError):
+                    await self._task
+            finally:
+                self._task = None
+        self._running = False
+        self._server = None
         logger.info("HTTP API stopped")
