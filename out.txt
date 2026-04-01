@@ -1,0 +1,36 @@
+test_alert_writer_dedup (__main__.SmokeTest) ... ok
+test_flask_alerts (__main__.SmokeTest) ... ok
+test_flask_health (__main__.SmokeTest) ... ok
+test_flask_ingest (__main__.SmokeTest) ... ok
+test_flask_summary (__main__.SmokeTest) ... ok
+test_r01_brute_force (__main__.SmokeTest) ... ok
+test_r02_cred_stuffing (__main__.SmokeTest) ... ok
+test_r03_sequence_account_takeover (__main__.SmokeTest) ... ok
+test_r04_off_hours (__main__.SmokeTest) ... ok
+test_r08_blocklist (__main__.SmokeTest) ... ok
+test_r13_priv_esc (__main__.SmokeTest) ... ok
+test_r14_sensitive_file (__main__.SmokeTest) ... ok
+test_r17_critical_exception (__main__.SmokeTest) ... FAIL
+test_r19_session_hijacking (__main__.SmokeTest) ... FAIL
+
+======================================================================
+FAIL: test_r17_critical_exception (__main__.SmokeTest)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "C:\Users\DELL\Documents\GC project\ruleEngine\smoke_test.py", line 88, in test_r17_critical_exception
+    self.assertTrue(any(a.rule_id == "R17" for a in res))
+AssertionError: False is not true
+
+======================================================================
+FAIL: test_r19_session_hijacking (__main__.SmokeTest)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "C:\Users\DELL\Documents\GC project\ruleEngine\smoke_test.py", line 95, in test_r19_session_hijacking
+    self.assertTrue(any(a.rule_id == "R19" for a in alerts))
+AssertionError: False is not true
+
+----------------------------------------------------------------------
+Ran 14 tests in 0.029s
+
+FAILED (failures=2)
+FAIL
