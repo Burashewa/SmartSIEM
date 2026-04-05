@@ -3,17 +3,41 @@ export class CreateLogDto {
   source?: string;
   severity?: string;
   event?: string;
+  action?: string;
+  status?: string;
+
   user?: string;
+  role?: string;
+
   ip?: string;
+
+  deviceId?: string;
+  sessionId?: string;
+
+  endpoint?: string;
+  method?: string;
+
+  resource?: string | null;
+
+  payload?: Record<string, unknown>;
+
+  userAgent?: string;
+
   latitude?: number | string;
   longitude?: number | string;
   lat?: number | string;
   lon?: number | string;
-  // Raw line payload keys commonly used by Nginx/Syslog forwarders
+
+  tags?: string[];
+
+  metadata?: Record<string, unknown>;
+
+  raw?: Record<string, unknown>;
+
   message?: string;
   log?: string;
   line?: string;
   rawLine?: string;
-  // Anything else sent by clients should be captured for normalization
+
   [key: string]: unknown;
 }

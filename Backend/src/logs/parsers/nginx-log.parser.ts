@@ -56,7 +56,23 @@ export class NginxLogParser implements LogParser {
       },
     };
 
-    return [{ timestamp, source, severity, event, user, ip, latitude: geo?.latitude, longitude: geo?.longitude, raw }];
+    return [
+      {
+        timestamp,
+        source,
+        severity,
+        event,
+        user,
+        ip,
+        method,
+        endpoint: path,
+        userAgent: userAgent || undefined,
+        status: String(statusCode),
+        latitude: geo?.latitude,
+        longitude: geo?.longitude,
+        raw,
+      },
+    ];
   }
 
   private mapSeverity(statusCode: number): Severity {

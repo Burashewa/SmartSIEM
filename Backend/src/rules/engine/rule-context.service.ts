@@ -10,6 +10,7 @@ import {
   RuleContext,
 } from '../interfaces/detection-rule.interface';
 import { FAILED_LOGIN_EVENT_NAMES } from '../rules.constants';
+import { RecommendationsService } from '../../recommendations/recommendations.service';
 
 @Injectable()
 export class RuleContextService {
@@ -17,6 +18,7 @@ export class RuleContextService {
     @InjectModel(Log.name) private readonly logModel: Model<Log>,
     @InjectModel(Alert.name) private readonly alertModel: Model<Alert>,
     private readonly alertsService: AlertsService,
+    private readonly recommendationsService: RecommendationsService,
   ) {}
 
   build(ruleId: string): RuleContext {
@@ -28,9 +30,12 @@ export class RuleContextService {
       logger,
       emitAlert: async (input: AlertInput, log: Log): Promise<void> => {
         const enrichment = await this.buildEnrichment(log);
+        const recommendations = this.recommendationsService.getRecommendations(input);
+        
         const context = {
           ...(input.context ?? {}),
           enrichment,
+          recommendations,
         };
 
         await this.alertsService.create({

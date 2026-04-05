@@ -1,7 +1,14 @@
 const statusEl = document.getElementById("status");
-const alertsEl = document.getElementById("alerts");
-const activityEl = document.getElementById("activity");
-const logsEl = document.getElementById("logs");
+const alertsEl = document.getElementById("alertList");
+const activityEl = document.getElementById("activityFeed");
+const logsEl = document.getElementById("logList");
+const statAlertsEl = document.getElementById("statAlerts");
+const statLogsEl = document.getElementById("statLogs");
+const statLastSyncEl = document.getElementById("statLastSync");
+
+const touchLastSync = () => {
+  if (statLastSyncEl) statLastSyncEl.textContent = new Date().toLocaleTimeString();
+};
 const refreshBtn = document.getElementById("refresh");
 const clearLogsBtn = document.getElementById("clearLogs");
 const clearAlertsBtn = document.getElementById("clearAlerts");
@@ -17,6 +24,11 @@ const API_BASE = `${apiOrigin}/api`;
 
 const setStatus = (text) => {
   statusEl.textContent = text;
+  const lower = text.toLowerCase();
+  if (lower.includes("error")) statusEl.dataset.state = "error";
+  else if (lower.includes("loading") || lower.includes("sending") || lower.includes("clearing"))
+    statusEl.dataset.state = "busy";
+  else statusEl.dataset.state = "idle";
 };
 
 const rulePresets = {
@@ -237,12 +249,8 @@ const applyPreset = (key) => {
 
 const addActivity = (text, type = "info") => {
   const item = document.createElement("div");
-  item.className = "activity-item";
+  item.className = `activity-item activity-item--${type === "error" ? "error" : "info"}`;
   item.textContent = `[${new Date().toLocaleTimeString()}] ${text}`;
-  if (type === "error") {
-    item.style.borderColor = "rgba(169, 28, 47, 0.4)";
-    item.style.background = "#ffecef";
-  }
   activityEl.prepend(item);
 };
 
@@ -284,36 +292,26 @@ const renderAlerts = (alerts) => {
     rule.className = "muted";
     rule.textContent = `Rule: ${alert.ruleId || "unknown"}`;
 
+    const alertId = alert._id != null ? String(alert._id) : "";
+    const footer = document.createElement("div");
+    footer.className = "alert-card-footer";
+    const recLink = document.createElement("a");
+    recLink.className = "btn btn-small primary";
+    recLink.textContent = "View recommendations";
+    if (alertId) {
+      recLink.href = `recommendations.html?id=${encodeURIComponent(alertId)}`;
+    } else {
+      recLink.href = "#";
+      recLink.setAttribute("aria-disabled", "true");
+      recLink.classList.add("btn-disabled");
+    }
+    footer.appendChild(recLink);
+
     card.appendChild(meta);
     card.appendChild(title);
     card.appendChild(tag);
     card.appendChild(rule);
-
-    const recommendations =
-      alert.recommendations ||
-      (alert.context && Array.isArray(alert.context.recommendations) ? alert.context.recommendations : null);
-
-    const recTitle = document.createElement("div");
-    recTitle.className = "muted";
-    recTitle.textContent = "Recommendations:";
-
-    const recList = document.createElement("ul");
-    recList.className = "rec-list";
-
-    if (Array.isArray(recommendations) && recommendations.length) {
-      recommendations.forEach((rec) => {
-        const item = document.createElement("li");
-        item.textContent = rec;
-        recList.appendChild(item);
-      });
-    } else {
-      const item = document.createElement("li");
-      item.textContent = "No recommendations available.";
-      recList.appendChild(item);
-    }
-
-    card.appendChild(recTitle);
-    card.appendChild(recList);
+    card.appendChild(footer);
 
     alertsEl.appendChild(card);
   });
@@ -342,6 +340,14 @@ const renderLogs = (logs) => {
     const title = document.createElement("div");
     title.textContent = log.event || "Log event";
 
+    const detail = document.createElement("div");
+    detail.className = "muted";
+    const parts = [];
+    if (log.action) parts.push(`action: ${log.action}`);
+    if (log.status) parts.push(`status: ${log.status}`);
+    if (log.endpoint) parts.push(log.method ? `${log.method} ${log.endpoint}` : log.endpoint);
+    detail.textContent = parts.length ? parts.join(" · ") : "";
+
     const source = document.createElement("div");
     source.className = "muted";
     source.textContent = `Source: ${log.source || "unknown"}`;
@@ -353,6 +359,7 @@ const renderLogs = (logs) => {
 
     card.appendChild(meta);
     card.appendChild(title);
+    if (detail.textContent) card.appendChild(detail);
     card.appendChild(tag);
     card.appendChild(source);
     logsEl.appendChild(card);
@@ -366,6 +373,8 @@ const loadAlerts = async () => {
     if (!res.ok) throw new Error(`Alert fetch failed (${res.status})`);
     const data = await res.json();
     renderAlerts(data);
+    if (statAlertsEl) statAlertsEl.textContent = String(data.length);
+    touchLastSync();
     addActivity(`Loaded ${data.length} alerts`);
   } catch (err) {
     addActivity(err.message, "error");
@@ -381,6 +390,8 @@ const loadLogs = async () => {
     if (!res.ok) throw new Error(`Log fetch failed (${res.status})`);
     const data = await res.json();
     renderLogs(data);
+    if (statLogsEl) statLogsEl.textContent = String(data.length);
+    touchLastSync();
     addActivity(`Loaded ${data.length} logs`);
   } catch (err) {
     addActivity(err.message, "error");

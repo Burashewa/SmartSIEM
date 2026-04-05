@@ -3,220 +3,268 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>Simple SIEM Console</title>
+    <title>Smart SIEM — Dashboard</title>
     <link rel="stylesheet" href="styles.css" />
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link
-      href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=Spline+Sans:wght@400;500;600&display=swap"
+      href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500&family=Outfit:wght@400;500;600;700&family=Space+Grotesk:wght@400;500;600;700&display=swap"
       rel="stylesheet"
     />
   </head>
-  <body>
-    <div class="bg-orbit"></div>
-    <div class="bg-grid"></div>
+  <body class="dashboard-body">
+    <div class="bg-orbit" aria-hidden="true"></div>
+    <div class="bg-grid" aria-hidden="true"></div>
+    <div class="bg-noise" aria-hidden="true"></div>
 
-    <main class="page">
-      <header class="hero">
-        <div class="badge">Simple SIEM</div>
-        <h1>Security Signal Console</h1>
-        <p>
-          Lightweight view into alerts and quick log ingestion. Built for fast verification while
-          the backend matures.
-        </p>
-        <div class="hero-actions">
-          <button id="refresh" class="btn primary">Refresh Alerts</button>
-          <button id="clearLogs" class="btn danger">Clear Logs</button>
-          <button id="clearAlerts" class="btn danger">Clear Alerts</button>
-          <span id="status" class="status">Idle</span>
+    <header class="topbar">
+      <div class="topbar-inner topbar-inner--dash">
+        <div class="topbar-brand">
+          <span class="topbar-mark" aria-hidden="true"></span>
+          <span class="topbar-title">Smart SIEM</span>
         </div>
-      </header>
+        <span class="topbar-tag">Operations dashboard</span>
+      </div>
+    </header>
 
-      <section class="grid">
-        <article class="panel">
+    <div class="dashboard-app">
+      <aside class="dash-sidebar" aria-label="Section navigation">
+        <p class="dash-sidebar-label">Navigate</p>
+        <nav class="dash-nav">
+          <a class="dash-nav-link" href="#overview">Overview</a>
+          <a class="dash-nav-link" href="#alerts">Alerts</a>
+          <a class="dash-nav-link" href="#ingestion">Log ingestion</a>
+          <a class="dash-nav-link" href="#activity">Activity</a>
+          <a class="dash-nav-link" href="#logs">Log stream</a>
+        </nav>
+      </aside>
+
+      <main class="dash-main">
+        <section id="overview" class="dash-section dash-section--overview">
+          <div class="dash-toolbar">
+            <div class="dash-toolbar-text">
+              <h1 class="dash-title">Dashboard</h1>
+              <p class="dash-subtitle">
+                Alerts, test ingestion, and telemetry in one layout. Jump to a section from the left
+                or scroll.
+              </p>
+            </div>
+            <div class="dash-toolbar-actions">
+              <button id="refresh" type="button" class="btn primary">
+                <span class="btn-icon" aria-hidden="true">↻</span>
+                Refresh
+              </button>
+              <button id="clearLogs" type="button" class="btn danger">Clear logs</button>
+              <button id="clearAlerts" type="button" class="btn danger">Clear alerts</button>
+              <span id="status" class="status-pill" data-state="idle">Idle</span>
+            </div>
+          </div>
+
+          <div class="dash-stats" role="region" aria-label="Key metrics">
+            <article class="dash-stat">
+              <span class="dash-stat-label">Alerts in database</span>
+              <span class="dash-stat-value" id="statAlerts">—</span>
+              <span class="dash-stat-hint">Newest listed first below</span>
+            </article>
+            <article class="dash-stat">
+              <span class="dash-stat-label">Stored log events</span>
+              <span class="dash-stat-value" id="statLogs">—</span>
+              <span class="dash-stat-hint">Includes test traffic</span>
+            </article>
+            <article class="dash-stat">
+              <span class="dash-stat-label">Last data refresh</span>
+              <span class="dash-stat-value dash-stat-value--mono" id="statLastSync">—</span>
+              <span class="dash-stat-hint">Updates on refresh or after sends</span>
+            </article>
+          </div>
+        </section>
+
+        <div class="dash-split">
+          <section id="alerts" class="dash-section panel panel--dash">
+            <div class="panel-header">
+              <h2>Alerts</h2>
+              <span class="muted">Newest first</span>
+            </div>
+            <div id="alertList" class="alert-list"></div>
+          </section>
+
+          <section id="ingestion" class="dash-section panel panel--dash panel--form">
+            <div class="panel-header">
+              <h2>Send test log</h2>
+              <span class="muted">POST /api/logs</span>
+            </div>
+            <div class="panel-scroll">
+              <form id="logForm" class="form">
+                <label>
+                  Rule Preset
+                  <select name="preset" id="preset">
+                    <option value="">Custom</option>
+                    <option value="failed-login">Failed login burst</option>
+                    <option value="credential-stuffing">Credential stuffing</option>
+                    <option value="login-success">Login success</option>
+                    <option value="impossible-travel-baseline">Impossible travel (baseline)</option>
+                    <option value="impossible-travel-trigger">Impossible travel (trigger)</option>
+                    <option value="sql-injection">SQL injection</option>
+                    <option value="xss">XSS</option>
+                    <option value="command-injection">Command injection</option>
+                    <option value="api-rate-limit">API rate limit</option>
+                    <option value="unauthorized-endpoint">Unauthorized endpoint</option>
+                    <option value="directory-scan">Directory scan</option>
+                    <option value="sensitive-file-access">Sensitive file access</option>
+                  </select>
+                </label>
+                <div class="field" data-field="description">
+                  <label>
+                    Rule Description (client only)
+                    <textarea
+                      name="description"
+                      id="ruleDescription"
+                      placeholder="Select a preset to see guidance here."
+                      rows="3"
+                    ></textarea>
+                  </label>
+                </div>
+                <div class="field" data-field="event">
+                  <label>
+                    Event
+                    <input name="event" placeholder="login_failed" value="login_failed" required />
+                  </label>
+                </div>
+                <div class="field" data-field="ip">
+                  <label>
+                    IP
+                    <input name="ip" placeholder="1.2.3.4" value="1.2.3.4" required />
+                  </label>
+                </div>
+                <div class="field" data-field="severity">
+                  <label>
+                    Severity
+                    <select name="severity">
+                      <option value="low">low</option>
+                      <option value="medium">medium</option>
+                      <option value="high" selected>high</option>
+                      <option value="critical">critical</option>
+                    </select>
+                  </label>
+                </div>
+                <div class="field" data-field="source">
+                  <label>
+                    Source
+                    <input name="source" placeholder="frontend-test" value="frontend-test" />
+                  </label>
+                </div>
+                <div class="field" data-field="user">
+                  <label>
+                    User
+                    <input name="user" placeholder="alice" value="alice" />
+                  </label>
+                </div>
+                <div class="field" data-field="latitude">
+                  <label>
+                    Latitude
+                    <input name="latitude" placeholder="40.7128" />
+                  </label>
+                </div>
+                <div class="field" data-field="longitude">
+                  <label>
+                    Longitude
+                    <input name="longitude" placeholder="-74.0060" />
+                  </label>
+                </div>
+                <div class="field" data-field="lat">
+                  <label>
+                    Lat (alternate)
+                    <input name="lat" placeholder="40.7128" />
+                  </label>
+                </div>
+                <div class="field" data-field="lon">
+                  <label>
+                    Lon (alternate)
+                    <input name="lon" placeholder="-74.0060" />
+                  </label>
+                </div>
+                <div class="field" data-field="message">
+                  <label>
+                    Message
+                    <input name="message" placeholder="raw log message" />
+                  </label>
+                </div>
+                <div class="field" data-field="log">
+                  <label>
+                    Log
+                    <input name="log" placeholder="raw log field" />
+                  </label>
+                </div>
+                <div class="field" data-field="line">
+                  <label>
+                    Line
+                    <input name="line" placeholder="raw line" />
+                  </label>
+                </div>
+                <div class="field" data-field="rawLine">
+                  <label>
+                    Raw Line
+                    <input name="rawLine" placeholder="raw line field" />
+                  </label>
+                </div>
+                <div class="field" data-field="count">
+                  <label>
+                    Batch Count
+                    <input name="count" type="number" min="1" value="1" />
+                  </label>
+                </div>
+                <div class="field" data-field="varyUser">
+                  <label>
+                    Vary User Per Log
+                    <input name="varyUser" type="checkbox" />
+                  </label>
+                </div>
+                <div class="field" data-field="timestamp">
+                  <label>
+                    Timestamp
+                    <input name="timestamp" placeholder="auto" />
+                  </label>
+                </div>
+                <div class="field" data-field="raw">
+                  <label>
+                    Raw Payload (JSON)
+                    <textarea
+                      name="raw"
+                      placeholder='{"device":"web","region":"us-east"}'
+                      rows="4"
+                    ></textarea>
+                  </label>
+                </div>
+                <button class="btn ghost" type="submit">Send Log</button>
+                <p id="ruleHint" class="hint">
+                  Tip: Use Rule Preset plus Batch Count to trigger multi-log rules quickly.
+                </p>
+              </form>
+            </div>
+          </section>
+        </div>
+
+        <section id="activity" class="dash-section panel panel-wide panel-terminal">
           <div class="panel-header">
-            <h2>Alerts</h2>
+            <h2>Recent activity</h2>
+            <span class="muted">Live console</span>
+          </div>
+          <div class="activity-wrap">
+            <div id="activityFeed" class="activity">
+              <div class="activity-item activity-item--info">Console ready.</div>
+            </div>
+          </div>
+        </section>
+
+        <section id="logs" class="dash-section panel panel-wide panel--dash">
+          <div class="panel-header">
+            <h2>Recent logs</h2>
             <span class="muted">Newest first</span>
           </div>
-          <div id="alerts" class="alert-list">
-            <div class="empty">No alerts yet.</div>
-          </div>
-        </article>
-
-        <article class="panel">
-          <div class="panel-header">
-            <h2>Send Test Log</h2>
-            <span class="muted">POST /api/logs</span>
-          </div>
-          <form id="logForm" class="form">
-            <label>
-              Rule Preset
-              <select name="preset" id="preset">
-                <option value="">Custom</option>
-                <option value="failed-login">Failed login burst</option>
-                <option value="credential-stuffing">Credential stuffing</option>
-                <option value="login-success">Login success</option>
-                <option value="impossible-travel-baseline">Impossible travel (baseline)</option>
-                <option value="impossible-travel-trigger">Impossible travel (trigger)</option>
-                <option value="sql-injection">SQL injection</option>
-                <option value="xss">XSS</option>
-                <option value="command-injection">Command injection</option>
-                <option value="api-rate-limit">API rate limit</option>
-                <option value="unauthorized-endpoint">Unauthorized endpoint</option>
-                <option value="directory-scan">Directory scan</option>
-                <option value="sensitive-file-access">Sensitive file access</option>
-              </select>
-            </label>
-            <div class="field" data-field="description">
-              <label>
-                Rule Description (client only)
-                <textarea
-                  name="description"
-                  id="ruleDescription"
-                  placeholder="Select a preset to see guidance here."
-                  rows="3"
-                ></textarea>
-              </label>
-            </div>
-            <div class="field" data-field="event">
-              <label>
-                Event
-                <input name="event" placeholder="login_failed" value="login_failed" required />
-              </label>
-            </div>
-            <div class="field" data-field="ip">
-              <label>
-                IP
-                <input name="ip" placeholder="1.2.3.4" value="1.2.3.4" required />
-              </label>
-            </div>
-            <div class="field" data-field="severity">
-              <label>
-                Severity
-                <select name="severity">
-                  <option value="low">low</option>
-                  <option value="medium">medium</option>
-                  <option value="high" selected>high</option>
-                  <option value="critical">critical</option>
-                </select>
-              </label>
-            </div>
-            <div class="field" data-field="source">
-              <label>
-                Source
-                <input name="source" placeholder="frontend-test" value="frontend-test" />
-              </label>
-            </div>
-            <div class="field" data-field="user">
-              <label>
-                User
-                <input name="user" placeholder="alice" value="alice" />
-              </label>
-            </div>
-            <div class="field" data-field="latitude">
-              <label>
-                Latitude
-                <input name="latitude" placeholder="40.7128" />
-              </label>
-            </div>
-            <div class="field" data-field="longitude">
-              <label>
-                Longitude
-                <input name="longitude" placeholder="-74.0060" />
-              </label>
-            </div>
-            <div class="field" data-field="lat">
-              <label>
-                Lat (alternate)
-                <input name="lat" placeholder="40.7128" />
-              </label>
-            </div>
-            <div class="field" data-field="lon">
-              <label>
-                Lon (alternate)
-                <input name="lon" placeholder="-74.0060" />
-              </label>
-            </div>
-            <div class="field" data-field="message">
-              <label>
-                Message
-                <input name="message" placeholder="raw log message" />
-              </label>
-            </div>
-            <div class="field" data-field="log">
-              <label>
-                Log
-                <input name="log" placeholder="raw log field" />
-              </label>
-            </div>
-            <div class="field" data-field="line">
-              <label>
-                Line
-                <input name="line" placeholder="raw line" />
-              </label>
-            </div>
-            <div class="field" data-field="rawLine">
-              <label>
-                Raw Line
-                <input name="rawLine" placeholder="raw line field" />
-              </label>
-            </div>
-            <div class="field" data-field="count">
-              <label>
-                Batch Count
-                <input name="count" type="number" min="1" value="1" />
-              </label>
-            </div>
-            <div class="field" data-field="varyUser">
-              <label>
-                Vary User Per Log
-                <input name="varyUser" type="checkbox" />
-              </label>
-            </div>
-            <div class="field" data-field="timestamp">
-              <label>
-                Timestamp
-                <input name="timestamp" placeholder="auto" />
-              </label>
-            </div>
-            <div class="field" data-field="raw">
-              <label>
-                Raw Payload (JSON)
-                <textarea
-                  name="raw"
-                  placeholder='{"device":"web","region":"us-east"}'
-                  rows="4"
-                ></textarea>
-              </label>
-            </div>
-            <button class="btn ghost" type="submit">Send Log</button>
-            <p id="ruleHint" class="hint">
-              Tip: Use Rule Preset plus Batch Count to trigger multi-log rules quickly.
-            </p>
-          </form>
-        </article>
-      </section>
-
-      <section class="panel panel-wide">
-        <div class="panel-header">
-          <h2>Recent Activity</h2>
-          <span class="muted">Live console output</span>
-        </div>
-        <div id="activity" class="activity">
-          <div class="activity-item">Console ready.</div>
-        </div>
-      </section>
-
-      <section class="panel panel-wide">
-        <div class="panel-header">
-          <h2>Recent Logs</h2>
-          <span class="muted">Newest first</span>
-        </div>
-        <div id="logs" class="log-list">
-          <div class="empty">No logs yet.</div>
-        </div>
-      </section>
-    </main>
+          <div id="logList" class="log-list"></div>
+        </section>
+      </main>
+    </div>
 
     <script src="app.js"></script>
   </body>

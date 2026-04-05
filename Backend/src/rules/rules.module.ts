@@ -7,6 +7,7 @@ import { Alert, AlertSchema } from '../alerts/alert.schema';
 import { RuleEngineService } from './engine/rule-engine.service';
 import { RuleLoaderService } from './engine/rule-loader.service';
 import { RuleContextService } from './engine/rule-context.service';
+import { RecommendationsModule } from '../recommendations/recommendations.module';
 
 @Module({
   imports: [
@@ -15,6 +16,7 @@ import { RuleContextService } from './engine/rule-context.service';
       { name: Alert.name, schema: AlertSchema },
     ]),
     AlertsModule,
+    RecommendationsModule,
   ],
   providers: [RulesService, RuleEngineService, RuleLoaderService, RuleContextService],
   exports: [RulesService],

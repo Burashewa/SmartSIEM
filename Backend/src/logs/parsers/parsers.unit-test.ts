@@ -1,4 +1,5 @@
 import * as assert from 'node:assert/strict';
+import { GenericLogParser } from './generic-log.parser';
 import { NginxLogParser } from './nginx-log.parser';
 import { SyslogLogParser } from './syslog-log.parser';
 import { CreateLogDto } from '../log.dto';
@@ -64,6 +65,26 @@ run('Syslog parser parses RFC5424 line', () => {
   assert.equal(logs[0].severity, 'high');
   assert.equal(logs[0].latitude, 40.7128);
   assert.equal(logs[0].longitude, -74.006);
+});
+
+run('Generic parser maps structured authentication login failure to login_failed', () => {
+  const parser = new GenericLogParser();
+  const dto: CreateLogDto = {
+    timestamp: '2026-03-18T10:30:00Z',
+    source: 'web',
+    severity: 'medium',
+    event: 'authentication',
+    action: 'login',
+    status: 'failed',
+    user: 'admin',
+    ip: '192.168.1.10',
+  };
+
+  const logs = parser.parse(dto);
+  assert.equal(logs.length, 1);
+  assert.equal(logs[0].event, 'login_failed');
+  assert.equal(logs[0].action, 'login');
+  assert.equal(logs[0].status, 'failed');
 });
 
 run('Syslog parser parses RFC3164 line and extracts host IP', () => {
