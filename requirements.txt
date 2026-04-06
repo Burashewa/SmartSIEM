@@ -1,2 +1,7 @@
 flask>=3.0
 rich>=13.7
+flask-socketio>=5.3
+python-dotenv>=1.0
+pymongo>=4.6
+eventlet>=0.35
+dnspython>=2.4

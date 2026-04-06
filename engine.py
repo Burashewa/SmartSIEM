@@ -42,11 +42,11 @@ def evaluate(event: LogEvent) -> List[SecurityAlert]:
 
 def _get_group_value(event: LogEvent, group_by: str) -> str:
     if group_by == "ip":
-        return event.ip or "unknown_ip"
+        return event.ip or f"unknown_ip_{event.event_id}"
     elif group_by == "user":
-        return event.user or "unknown_user"
+        return event.user or f"unknown_user_{event.event_id}"
     elif group_by == "sessionId":
-        return event.sessionId or "unknown_session"
+        return event.sessionId or f"unknown_session_{event.event_id}"
     return "default"
 
 def _eval_threshold_window(rule: DetectionRule, event: LogEvent) -> SecurityAlert | None:

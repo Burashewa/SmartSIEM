@@ -1,1 +1,20 @@
-adent.md
+# Git ignore for SmartSIEM Rule Engine
+
+# Secrets
+.env
+
+# Metadata/Docs to ignore
+agent.md
+
+# Python/Build artifacts
+__pycache__/
+*.py[cod]
+*$py.class
+venv/
+.pytest_cache/
+
+# Local test data and logs (AS REQUESTED)
+*.txt
+*.json
+*.log
+!requirements.txt

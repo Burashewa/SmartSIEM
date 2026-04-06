@@ -1,6 +1,6 @@
 import sys
 import unittest
-from unittest.mock import patch
+from unittest.mock import patch, MagicMock
 import json
 import time
 
@@ -8,30 +8,37 @@ import time
 from app import app
 from models import LogEvent, SecurityAlert
 from engine import evaluate
-from alert_writer import writer, AlertWriter
+from alert_writer import writer, MongoAlertWriter
 from window import window, sequence
 
 class SmokeTest(unittest.TestCase):
     def setUp(self):
         self.client = app.test_client()
-        # Reset state
+        # Reset in-memory state
         window._buckets.clear()
         sequence._first_events.clear()
-        # Use an in-memory test file for writer
-        self.test_file = "test_alerts.json"
         
-        # Write to test writer and update global
-        import alert_writer
-        self.orig_writer = alert_writer.writer
-        self.test_writer = AlertWriter(self.test_file)
-        alert_writer.writer = self.test_writer
-
+        # Mock MongoDB collections
+        self.mock_alerts = MagicMock()
+        self.mock_logs = MagicMock()
+        
+        # Patch the collections in the alert_writer and app modules
+        self.patcher_alerts = patch('alert_writer.alerts_col', self.mock_alerts)
+        self.patcher_logs = patch('app.logs_col', self.mock_logs)
+        self.patcher_ping = patch('app.db_ping', return_value=True)
+        
+        self.patcher_alerts.start()
+        self.patcher_logs.start()
+        self.patcher_ping.start()
+        
+        # Reset writer stats
+        writer._total = 0
+        writer._suppressed = 0
+        
     def tearDown(self):
-        import os
-        if os.path.exists(self.test_file):
-            os.remove(self.test_file)
-        import alert_writer
-        alert_writer.writer = self.orig_writer
+        self.patcher_alerts.stop()
+        self.patcher_logs.stop()
+        self.patcher_ping.stop()
 
     def _eval_and_get(self, event_dict):
         event = LogEvent.from_dict(event_dict)
@@ -95,15 +102,23 @@ class SmokeTest(unittest.TestCase):
         self.assertTrue(any(a.rule_id == "R19" for a in alerts))
 
     def test_alert_writer_dedup(self):
+        from pymongo.errors import DuplicateKeyError
+        
         alert1 = SecurityAlert(rule_id="R01", rule_name="Test", severity="HIGH", ip="1.2.3.4", event="authentication", message="", recommendation="", linked_event_ids=[])
         alert2 = SecurityAlert(rule_id="R01", rule_name="Test", severity="HIGH", ip="1.2.3.4", event="authentication", message="", recommendation="", linked_event_ids=[])
         
-        # First write succeeds
-        self.assertTrue(self.test_writer.write(alert1))
-        # Second write is suppressed within 30s
-        self.assertFalse(self.test_writer.write(alert2))
+        # First write succeeds (does not raise)
+        self.mock_alerts.insert_one.return_value = None
+        self.assertTrue(writer.write(alert1))
         
-        stats = self.test_writer.stats()
+        # Second write raises DuplicateKeyError (suppressed)
+        self.mock_alerts.insert_one.side_effect = DuplicateKeyError("Duplicate alert")
+        self.assertFalse(writer.write(alert2))
+        
+        # Reset side effect for subsequent tests
+        self.mock_alerts.insert_one.side_effect = None
+        
+        stats = writer.stats()
         self.assertEqual(stats["suppressed"], 1)
 
     def test_flask_ingest(self):
@@ -113,19 +128,19 @@ class SmokeTest(unittest.TestCase):
             "status": "failed",
             "ip": "1.2.3.4"
         })
-        self.assertEqual(resp.status_code, 200)
+        self.assertEqual(resp.status_code, 202)
         data = resp.get_json()
         self.assertIn("event_id", data)
 
     def test_flask_health(self):
         resp = self.client.get('/health')
         self.assertEqual(resp.status_code, 200)
-        self.assertEqual(resp.get_json(), {"status": "ok"})
+        self.assertEqual(resp.get_json()["status"], "ok")
         
     def test_flask_alerts(self):
         # ensure there is at least one alert to test properly
         alert = SecurityAlert("R99", "Test", "LOW", "1.1.1.1", "T", "", "", [])
-        self.test_writer.write(alert)
+        writer.write(alert)
         
         resp = self.client.get('/alerts')
         self.assertEqual(resp.status_code, 200)
