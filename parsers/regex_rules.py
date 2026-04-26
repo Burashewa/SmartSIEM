@@ -55,6 +55,16 @@ _SYSLOG_RFC5424 = re.compile(
     re.DOTALL,
 )
 
+# Modern Kali / systemd-style syslog:
+# 2026-04-26T01:50:19.814361-04:00 kali sudo: ...
+_KALI_SYSLOG = re.compile(
+    r"^(?P<timestamp>\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{6}[+-]\d{2}:\d{2})\s+"
+    r"(?P<hostname>\S+)\s+"
+    r"(?P<program>\S+?)(?:\[(?P<pid>\d+)\])?:\s*"
+    r"(?P<message>.*)$",
+    re.DOTALL,
+)
+
 # ---------------------------------------------------------------------------
 # Web server access logs
 # ---------------------------------------------------------------------------
@@ -98,10 +108,23 @@ _SSH_ACCEPTED = re.compile(
 # user : TTY=tty ; PWD=path ; USER=root ; COMMAND=cmd
 _SUDO = re.compile(
     r"^(?P<user>\S+)\s+:\s+"
+    r"(?:.*?\s+;\s+)?"
     r"TTY=(?P<tty>\S+)\s+;\s+"
     r"PWD=(?P<pwd>\S+)\s+;\s+"
     r"USER=(?P<runas_user>\S+)\s+;\s+"
     r"COMMAND=(?P<command>.*)$",
+)
+
+# unix_chkpwd auth failures (message part)
+# password check failed for user (username)
+_UNIX_CHKPWD = re.compile(
+    r"^password\s+check\s+failed\s+for\s+user\s+(?P<user>\(\w+\))\s*$",
+)
+
+# PAM session open/close (message part)
+# pam_unix(...): session opened|closed for user USER
+_PAM_SESSION = re.compile(
+    r"^pam_unix\([^\)]*\):\s+session\s+(?P<action>opened|closed)\s+for\s+user\s+(?P<user>\S+)\s*$",
 )
 
 # ---------------------------------------------------------------------------
@@ -111,12 +134,15 @@ _SUDO = re.compile(
 LOG_RULES: tuple[RegexRule, ...] = (
     # Full-line formats
     RegexRule("apache_combined", _APACHE_COMBINED, priority=100),
+    RegexRule("kali_syslog", _KALI_SYSLOG, priority=60),
     RegexRule("syslog_rfc5424", _SYSLOG_RFC5424, priority=50),
     RegexRule("syslog_rfc3164", _SYSLOG_RFC3164, priority=50),
     # Message-level (tried on syslog message part by base_parser)
     RegexRule("ssh_failed_password", _SSH_FAILED_PASSWORD, priority=90, scope="message"),
     RegexRule("ssh_accepted", _SSH_ACCEPTED, priority=90, scope="message"),
     RegexRule("sudo", _SUDO, priority=90, scope="message"),
+    RegexRule("unix_chkpwd", _UNIX_CHKPWD, priority=90, scope="message"),
+    RegexRule("pam_session", _PAM_SESSION, priority=90, scope="message"),
 )
 
 # Line-level rules (match full input), highest priority first

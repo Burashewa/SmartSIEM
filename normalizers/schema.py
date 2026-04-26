@@ -1,6 +1,7 @@
 """Standard Pydantic schema for SIEM-normalized log events."""
 
 import json
+from datetime import datetime, timezone
 from typing import Any, Literal
 
 from pydantic import BaseModel, Field
@@ -63,9 +64,17 @@ class SIEMEvent(BaseModel):
 # Mapping: ingestion source -> SIEM source category
 # ---------------------------------------------------------------------------
 
-def _ingestion_source_to_siem(ingestion_source: str) -> SourceType | None:
-    """Map ingestion source (udp:, http:) to SIEM source category."""
+def _ingestion_source_to_siem(
+    ingestion_source: str,
+    payload_source: str | None = None,
+) -> SourceType | None:
+    """Map ingestion source + optional payload source to SIEM source category."""
     s = ingestion_source.lower()
+    payload = (payload_source or "").strip().lower()
+
+    if s.startswith("http") and payload in {"os", "system", "linux", "kali"}:
+        return "system"
+
     if s.startswith("http"):
         return "web"
     if "api" in s or "rest" in s:
@@ -83,12 +92,17 @@ def _ingestion_source_to_siem(ingestion_source: str) -> SourceType | None:
 
 _FIELD_MAP: dict[str, str] = {
     "client_ip": "ip",
-    "hostname": "metadata",  # store in metadata
+    "hostname": "deviceId",
+    "Hostname": "deviceId",
     "timestamp": "timestamp",
+    "EventReceivedTime": "timestamp",
     "username": "user",
     "user": "user",
+    "AccountName": "user",
+    "TargetUserName": "user",
     "runas_user": "role",
     "message": "metadata",
+    "Message": "event",
     "priority": "metadata",
     "method": "method",
     "path": "endpoint",
@@ -96,7 +110,143 @@ _FIELD_MAP: dict[str, str] = {
     "user_agent": "userAgent",
     "program": "metadata",
     "app_name": "metadata",
+    "Severity": "severity",
+    "SourceModuleName": "tags",
+    "ProcessID": "metadata",
+    "source": "metadata",
 }
+
+_FIELD_MAP_CI: dict[str, str] = {k.lower(): v for k, v in _FIELD_MAP.items()}
+
+_AUTH_LOG_TYPES = {
+    "ssh_failed_password",
+    "ssh_accepted",
+    "sudo",
+    "unix_chkpwd",
+    "pam_session",
+    "authentication_failure",
+}
+
+_FAILED_TERMS = ("failed", "failure", "incorrect", "invalid", "denied")
+_SUCCESS_TERMS = ("accepted", "success", "opened")
+
+
+def _safe_to_text(value: Any) -> str:
+    """Convert arbitrary values to a normalized lowercase text string."""
+    if value is None:
+        return ""
+    if isinstance(value, str):
+        return value.lower()
+    return str(value).lower()
+
+
+def _normalize_timestamp(value: Any) -> str | None:
+    """Normalize timestamp; emit UTC ISO-8601 when timezone info is present."""
+    if value is None:
+        return None
+    if isinstance(value, datetime):
+        if value.tzinfo is not None:
+            return value.astimezone(timezone.utc).isoformat().replace("+00:00", "Z")
+        return value.isoformat()
+
+    text = str(value).strip()
+    if not text:
+        return None
+
+    if "t" in text.lower():
+        iso_candidate = text.replace("Z", "+00:00")
+        try:
+            parsed = datetime.fromisoformat(iso_candidate)
+            if parsed.tzinfo is not None:
+                return parsed.astimezone(timezone.utc).isoformat().replace("+00:00", "Z")
+            return parsed.isoformat()
+        except ValueError:
+            return text
+
+    return text
+
+
+def _get_case_insensitive(fields: dict[str, Any], wanted_key: str) -> Any:
+    """Return a field value by case-insensitive key lookup."""
+    wanted = wanted_key.lower()
+    for key, value in fields.items():
+        if key.lower() == wanted:
+            return value
+    return None
+
+
+def _resolve_field_attr(key: str, siem_attrs: set[str]) -> str:
+    """Resolve parser key to SIEM attribute using exact + case-insensitive maps."""
+    if key in _FIELD_MAP:
+        return _FIELD_MAP[key]
+
+    lowered = key.lower()
+    if lowered in _FIELD_MAP_CI:
+        return _FIELD_MAP_CI[lowered]
+
+    for attr in siem_attrs:
+        if attr.lower() == lowered:
+            return attr
+
+    return key
+
+
+def _infer_status(log_type: str, fields: dict[str, Any], current: StatusType | None) -> StatusType | None:
+    """Infer event status from log_type + field text, preserving HTTP numeric logic."""
+    status = current
+
+    parser_status = _get_case_insensitive(fields, "status")
+    if parser_status is not None:
+        ps = str(parser_status).strip()
+        if ps in ("200", "201", "2xx"):
+            status = "success"
+        elif ps and ps.startswith(("4", "5")):
+            status = "failed"
+
+    combined_text = " ".join([
+        _safe_to_text(log_type),
+        " ".join(_safe_to_text(v) for v in fields.values()),
+    ])
+
+    if any(term in combined_text for term in _FAILED_TERMS):
+        return "failed"
+    if any(term in combined_text for term in _SUCCESS_TERMS):
+        return "success"
+    return status
+
+
+def _infer_severity(log_type: str, fields: dict[str, Any]) -> str | None:
+    """Infer severity for auth/system events with conservative defaults."""
+    log_type_l = log_type.lower()
+    combined_text = " ".join([
+        log_type_l,
+        " ".join(_safe_to_text(v) for v in fields.values()),
+    ])
+
+    if (
+        log_type_l == "ssh_failed_password"
+        or log_type_l == "authentication_failure"
+        or (log_type_l == "sudo" and "incorrect" in combined_text and "password" in combined_text)
+        or "authentication_failure" in combined_text
+    ):
+        return "high"
+
+    if (
+        "session opened" in combined_text
+        or "session closed" in combined_text
+        or log_type_l == "pam_session"
+        or "stopping service" in combined_text
+    ):
+        return "medium"
+
+    if (
+        log_type_l in {"kali_syslog", "syslog_rfc3164", "syslog_rfc5424"}
+        or "systemd" in combined_text
+        or "fwupdmgr" in combined_text
+    ):
+        return "low"
+
+    return None
 
 
 def normalize(
@@ -121,26 +271,25 @@ def normalize(
         {"log": raw} if isinstance(raw, str) else raw
     )
 
-    siem_source = _ingestion_source_to_siem(source) if source else None
+    payload_source = _safe_to_text(_get_case_insensitive(fields, "source")) or None
+    siem_source = _ingestion_source_to_siem(source, payload_source=payload_source) if source else None
 
-    # Infer status from log_type
-    status: StatusType | None = None
-    if "failed" in log_type or "fail" in log_type or "error" in log_type:
-        status = "failed"
-    elif "accepted" in log_type or "success" in log_type:
-        status = "success"
+    hostname_field = _get_case_insensitive(fields, "hostname")
+    if hostname_field is not None and str(hostname_field).strip():
+        siem_source = "system"
 
-    # Map parser status if present (may be str or int from HTTP status)
-    parser_status = fields.get("status")
-    if parser_status is not None:
-        ps = str(parser_status).strip()
-        if ps in ("200", "201", "2xx"):
-            status = "success"
-        elif ps and ps.startswith(("4", "5")):
-            status = "failed"
+    status = _infer_status(log_type, fields, current=None)
+
+    if payload_source in {"os", "system", "linux", "kali"} and log_type in _AUTH_LOG_TYPES:
+        siem_source = "auth"
+    elif payload_source in {"os", "system", "linux", "kali"} and siem_source == "web":
+        siem_source = "system"
+
+    severity = _infer_severity(log_type, fields)
 
     mapped: dict[str, Any] = {
         "source": siem_source,
+        "severity": severity,
         "event": log_type,
         "status": status,
         "tags": [log_type],
@@ -153,18 +302,51 @@ def normalize(
     for key, value in fields.items():
         if value is None or (isinstance(value, str) and not value.strip()):
             continue
-        attr = _FIELD_MAP.get(key, key)
+
+        key_l = key.lower()
+
+        if key_l in {"timestamp", "eventreceivedtime"}:
+            normalized_ts = _normalize_timestamp(value)
+            if normalized_ts is not None:
+                mapped["timestamp"] = normalized_ts
+            continue
+
+        if log_type == "sudo" and key_l == "command":
+            mapped["resource"] = str(value)
+            mapped["metadata"][key] = value
+            continue
+
+        if key_l in {"program", "pid", "tty", "pwd"}:
+            mapped["metadata"][key] = value
+            continue
+
+        attr = _resolve_field_attr(key, siem_attrs)
         # Preserve dict/list for payload, metadata, raw, tags
         if attr in ("payload", "metadata", "raw") and isinstance(value, dict):
             mapped[attr] = value
         elif attr == "tags" and isinstance(value, list):
             mapped["tags"] = [str(x) for x in value if x is not None]
+        elif attr == "tags":
+            tag = str(value).strip()
+            if tag and tag not in mapped["tags"]:
+                mapped["tags"].append(tag)
         elif attr == "status" and value not in ("success", "failed"):
             mapped["metadata"][key] = value
         elif attr in siem_attrs:
             mapped[attr] = value
         else:
             mapped["metadata"][key] = value
+
+    source_tag_candidates: list[str] = []
+    if payload_source:
+        source_tag_candidates.append(payload_source)
+    hostname = _get_case_insensitive(fields, "hostname")
+    if isinstance(hostname, str) and hostname.strip():
+        source_tag_candidates.append(hostname.strip().lower())
+
+    for tag in source_tag_candidates:
+        if tag not in mapped["tags"]:
+            mapped["tags"].append(tag)
 
     return SIEMEvent(**mapped)
 

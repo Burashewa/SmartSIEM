@@ -4,6 +4,7 @@ import asyncio
 import ipaddress
 import logging
 import time
+import uuid
 from datetime import datetime
 from typing import Any
 
@@ -176,6 +177,10 @@ def _prepare_for_mongo(log_data: dict[str, Any]) -> dict[str, Any]:
         parsed = _parse_timestamp(ts) if isinstance(ts, str) else ts
         if isinstance(parsed, datetime):
             doc["timestamp"] = parsed
+
+    event_id = doc.get("event_id")
+    if not isinstance(event_id, str) or not event_id.strip():
+        doc["event_id"] = str(uuid.uuid4())
 
     return enrich_log_with_geo(doc)
 

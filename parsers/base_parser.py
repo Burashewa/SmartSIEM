@@ -9,6 +9,8 @@ from parsers.regex_rules import get_line_rules, get_message_rules
 
 logger = logging.getLogger(__name__)
 
+_SYSLOG_PARENT_TYPES = ("syslog_rfc3164", "syslog_rfc5424", "kali_syslog")
+
 
 @dataclass
 class ParseResult:
@@ -28,8 +30,8 @@ class BaseParser:
     Matches incoming logs against regex rules and extracts named fields.
 
     Handles both plain text (syslog) and JSON payloads. For JSON from the
-    HTTP API, extracts "message" if present and runs regex on it; other
-    JSON fields are merged into the result.
+    HTTP API, preserves all original JSON fields (including key casing), then
+    optionally parses message text for additional extracted fields.
     """
 
     def __init__(self) -> None:
@@ -64,8 +66,10 @@ class BaseParser:
 
     def _parse_json(self, raw: str, source: str) -> ParseResult:
         """
-        Parse JSON payload. If "message" exists, run regex on it.
-        Merge other JSON keys into fields.
+        Parse JSON payload and preserve all keys with original casing.
+
+        If message text exists (Message/message/msg/log/raw/event), run regex
+        parsing on that text and merge extracted fields on top.
         """
         try:
             data = json.loads(raw)
@@ -84,24 +88,23 @@ class BaseParser:
         if not isinstance(data, dict):
             return ParseResult(log_type="json_invalid", fields={}, raw=raw)
 
-        # Preserve structure for nested dicts/lists (pre-structured SIEM JSON)
+        # Preserve every JSON key-value pair with original key casing.
         json_fields: dict[str, str | dict[str, object] | list[object]] = {}
         for k, v in data.items():
-            if v is None:
-                continue
             if isinstance(v, (dict, list)):
                 json_fields[k] = v
-            elif v != "":
+            elif v is None:
+                json_fields[k] = ""
+            else:
                 json_fields[k] = str(v)
 
-        message = data.get("message")
-        if isinstance(message, str) and message.strip():
-            # Run regex on message; merge with JSON fields
-            sub_result = self._parse_text(message.strip(), source)
-            merged = dict(sub_result.fields)
-            for k, v in json_fields.items():
-                if k != "message" and k not in merged:
-                    merged[k] = v
+        message = self._find_internal_message_text(data)
+        if message:
+            # Run regex on internal text; merge extracted fields after
+            # initial JSON field extraction.
+            sub_result = self._parse_text(message, source)
+            merged = dict(json_fields)
+            merged.update(sub_result.fields)
             return ParseResult(
                 log_type=sub_result.log_type,
                 fields=merged,
@@ -115,6 +118,21 @@ class BaseParser:
             raw=raw,
         )
 
+    def _find_internal_message_text(self, data: dict[str, object]) -> str | None:
+        """Find best-effort internal log text from JSON payloads."""
+        for key in ("message", "Message", "msg", "log", "raw", "event", "Event"):
+            value = data.get(key)
+            if isinstance(value, str) and value.strip():
+                return value.strip()
+
+        for value in data.values():
+            if isinstance(value, dict):
+                nested = self._find_internal_message_text(value)
+                if nested:
+                    return nested
+
+        return None
+
     def _parse_text(self, text: str, source: str) -> ParseResult:
         """Apply line rules, then message rules on syslog message if matched."""
         for rule in self._line_rules:
@@ -124,7 +142,7 @@ class BaseParser:
                 log_type = rule.log_type
 
                 # If syslog, try message-level rules for finer typing
-                if rule.log_type in ("syslog_rfc3164", "syslog_rfc5424"):
+                if rule.log_type in _SYSLOG_PARENT_TYPES:
                     msg = fields.get("message", "")
                     if msg:
                         for mrule in self._message_rules:
