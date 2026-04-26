@@ -1,6 +1,8 @@
 import { Prop, Schema, SchemaFactory } from '@nestjs/mongoose';
 import { Document } from 'mongoose';
 
+export type AlertStatus = 'open' | 'investigating' | 'resolved';
+
 @Schema({ timestamps: true })
 export class Alert extends Document {
   @Prop({ type: String, required: true, index: true })
@@ -15,11 +17,23 @@ export class Alert extends Document {
   @Prop({ type: String, required: false, index: true })
   ip?: string;
 
+  @Prop({
+    type: String,
+    required: true,
+    index: true,
+    enum: ['open', 'investigating', 'resolved'],
+    default: 'open',
+  })
+  status!: AlertStatus;
+
   @Prop({ type: Date, required: true })
   triggeredAt!: Date;
 
   @Prop({ type: Object, required: false })
   context?: Record<string, unknown>;
+
+  createdAt?: Date;
+  updatedAt?: Date;
 }
 
 export const AlertSchema = SchemaFactory.createForClass(Alert);

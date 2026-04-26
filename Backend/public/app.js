@@ -290,7 +290,7 @@ const renderAlerts = (alerts) => {
 
     const rule = document.createElement("div");
     rule.className = "muted";
-    rule.textContent = `Rule: ${alert.ruleId || "unknown"}`;
+    rule.textContent = `Rule: ${alert.rule_id || "unknown"}`;
 
     const alertId = alert._id != null ? String(alert._id) : "";
     const footer = document.createElement("div");

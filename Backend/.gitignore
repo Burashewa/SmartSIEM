@@ -3,3 +3,5 @@ dist/
 .env
 .env.*
 .vscode/
+src/**/*.js
+src/**/*.js.map

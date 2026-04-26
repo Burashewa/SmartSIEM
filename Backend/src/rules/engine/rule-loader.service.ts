@@ -6,13 +6,35 @@ import { RULE_REGISTRY } from '../registry/rule.registry';
 export class RuleLoaderService {
   private readonly logger = new Logger(RuleLoaderService.name);
   private readonly rules: DetectionRule[];
+  private readonly enabledStates: Map<string, boolean>;
 
   constructor() {
     this.rules = this.loadRules();
+    this.enabledStates = new Map(this.rules.map((rule) => [rule.id, rule.enabled ?? true]));
   }
 
   getRules(): DetectionRule[] {
-    return this.rules;
+    return this.rules.map((rule) => ({
+      ...rule,
+      enabled: this.isRuleEnabled(rule.id),
+    }));
+  }
+
+  hasRule(id: string): boolean {
+    return this.enabledStates.has(id);
+  }
+
+  isRuleEnabled(id: string): boolean {
+    return this.enabledStates.get(id) ?? false;
+  }
+
+  setRuleEnabled(id: string, enabled: boolean): boolean {
+    if (!this.hasRule(id)) {
+      return false;
+    }
+
+    this.enabledStates.set(id, enabled);
+    return true;
   }
 
   private loadRules(): DetectionRule[] {

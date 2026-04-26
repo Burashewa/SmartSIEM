@@ -1,0 +1,284 @@
+import { Injectable } from '@nestjs/common';
+import { InjectModel } from '@nestjs/mongoose';
+import { Model } from 'mongoose';
+import { Alert } from '../alerts/alert.schema';
+import { Log } from '../logs/log.schema';
+
+type TrendTone = 'positive' | 'negative' | 'neutral';
+
+interface DashboardMetric {
+  value: number;
+  trend: string;
+  trendLabel: string;
+  trendTone: TrendTone;
+}
+
+interface LogActivityPoint {
+  time: string;
+  logs: number;
+}
+
+interface AlertSeverityPoint {
+  name: string;
+  value: number;
+  color: string;
+}
+
+interface EventsBySourcePoint {
+  source: string;
+  events: number;
+}
+
+@Injectable()
+export class DashboardService {
+  constructor(
+    @InjectModel(Log.name) private readonly logModel: Model<Log>,
+    @InjectModel(Alert.name) private readonly alertModel: Model<Alert>,
+  ) {}
+
+  async getSummary() {
+    const now = new Date();
+    const todayStart = startOfDay(now);
+    const yesterdayStart = addDays(todayStart, -1);
+    const lastHourStart = new Date(now.getTime() - 60 * 60 * 1000);
+    const lastDayStart = new Date(now.getTime() - 24 * 60 * 60 * 1000);
+
+    const [
+      logsToday,
+      logsYesterday,
+      activeAlerts,
+      newAlertsToday,
+      criticalThreats,
+      criticalTriggeredToday,
+      recentHighSeverityLogs,
+      logActivity,
+      alertsBySeverity,
+      eventsBySource,
+    ] = await Promise.all([
+      this.logModel.countDocuments({ timestamp: { $gte: todayStart, $lte: now } }),
+      this.logModel.countDocuments({
+        timestamp: { $gte: yesterdayStart, $lt: todayStart },
+      }),
+      this.alertModel.countDocuments({ status: { $ne: 'resolved' } }),
+      this.alertModel.countDocuments({ triggeredAt: { $gte: todayStart, $lte: now } }),
+      this.alertModel.countDocuments({
+        severity: 'critical',
+        status: { $ne: 'resolved' },
+      }),
+      this.alertModel.countDocuments({
+        severity: 'critical',
+        triggeredAt: { $gte: todayStart, $lte: now },
+      }),
+      this.logModel.countDocuments({
+        severity: { $in: ['high', 'critical'] },
+        timestamp: { $gte: lastHourStart, $lte: now },
+      }),
+      this.buildLogActivity(now),
+      this.buildAlertsBySeverity(),
+      this.buildEventsBySource(lastDayStart, now),
+    ]);
+
+    const systemHealth = this.computeSystemHealth({
+      activeAlerts,
+      criticalThreats,
+      recentHighSeverityLogs,
+    });
+
+    return {
+      generatedAt: now.toISOString(),
+      metrics: {
+        logsToday: this.buildLogsTodayMetric(logsToday, logsYesterday),
+        activeAlerts: this.buildCountMetric(
+          activeAlerts,
+          `${newAlertsToday} new`,
+          'today',
+          newAlertsToday > 0 ? 'negative' : 'neutral',
+        ),
+        criticalThreats: this.buildCountMetric(
+          criticalThreats,
+          `${criticalTriggeredToday} triggered`,
+          'today',
+          criticalThreats > 0 ? 'negative' : 'positive',
+        ),
+        systemHealth: {
+          value: systemHealth.score,
+          trend: systemHealth.label,
+          trendLabel: 'overall status',
+          trendTone: systemHealth.tone,
+        },
+      },
+      charts: {
+        logActivity,
+        alertsBySeverity,
+        eventsBySource,
+      },
+    };
+  }
+
+  private buildLogsTodayMetric(logsToday: number, logsYesterday: number): DashboardMetric {
+    if (logsYesterday === 0) {
+      return {
+        value: logsToday,
+        trend: logsToday === 0 ? '0%' : '+100%',
+        trendLabel: 'vs yesterday',
+        trendTone: logsToday === 0 ? 'neutral' : 'positive',
+      };
+    }
+
+    const deltaPercent = ((logsToday - logsYesterday) / logsYesterday) * 100;
+    const sign = deltaPercent > 0 ? '+' : '';
+
+    return {
+      value: logsToday,
+      trend: `${sign}${deltaPercent.toFixed(1)}%`,
+      trendLabel: 'vs yesterday',
+      trendTone: deltaPercent > 0 ? 'positive' : deltaPercent < 0 ? 'negative' : 'neutral',
+    };
+  }
+
+  private buildCountMetric(
+    value: number,
+    trend: string,
+    trendLabel: string,
+    trendTone: TrendTone,
+  ): DashboardMetric {
+    return { value, trend, trendLabel, trendTone };
+  }
+
+  private async buildLogActivity(now: Date): Promise<LogActivityPoint[]> {
+    const bucketCount = 6;
+    const bucketMs = 4 * 60 * 60 * 1000;
+    const windowStart = new Date(now.getTime() - bucketCount * bucketMs);
+
+    const counts = await Promise.all(
+      Array.from({ length: bucketCount }, (_, index) => {
+        const bucketStart = new Date(windowStart.getTime() + index * bucketMs);
+        const bucketEnd =
+          index === bucketCount - 1
+            ? now
+            : new Date(windowStart.getTime() + (index + 1) * bucketMs);
+
+        return this.logModel
+          .countDocuments({
+            timestamp: {
+              $gte: bucketStart,
+              $lt: bucketEnd,
+            },
+          })
+          .then((logs) => ({
+            time: formatHourLabel(bucketStart),
+            logs,
+          }));
+      }),
+    );
+
+    return counts;
+  }
+
+  private async buildAlertsBySeverity(): Promise<AlertSeverityPoint[]> {
+    const counts = await this.alertModel.aggregate<{ _id: string; value: number }>([
+      {
+        $group: {
+          _id: {
+            $toLower: '$severity',
+          },
+          value: {
+            $sum: 1,
+          },
+        },
+      },
+    ]);
+
+    const countMap = new Map(counts.map((item) => [item._id, item.value]));
+
+    return [
+      { name: 'Critical', value: countMap.get('critical') ?? 0, color: '#ef4444' },
+      { name: 'High', value: countMap.get('high') ?? 0, color: '#f59e0b' },
+      { name: 'Medium', value: countMap.get('medium') ?? 0, color: '#eab308' },
+      { name: 'Low', value: countMap.get('low') ?? 0, color: '#3b82f6' },
+      { name: 'Info', value: countMap.get('info') ?? 0, color: '#6b7280' },
+    ];
+  }
+
+  private async buildEventsBySource(
+    start: Date,
+    end: Date,
+  ): Promise<EventsBySourcePoint[]> {
+    const rows = await this.logModel.aggregate<{ source: string; events: number }>([
+      {
+        $match: {
+          timestamp: { $gte: start, $lte: end },
+          source: { $exists: true, $nin: [null, ''] },
+        },
+      },
+      {
+        $group: {
+          _id: '$source',
+          events: { $sum: 1 },
+        },
+      },
+      { $sort: { events: -1 } },
+      { $limit: 6 },
+      {
+        $project: {
+          _id: 0,
+          source: '$_id',
+          events: 1,
+        },
+      },
+    ]);
+
+    return rows;
+  }
+
+  private computeSystemHealth(input: {
+    activeAlerts: number;
+    criticalThreats: number;
+    recentHighSeverityLogs: number;
+  }): { score: number; label: string; tone: TrendTone } {
+    const penalty =
+      input.activeAlerts * 1.5 +
+      input.criticalThreats * 8 +
+      input.recentHighSeverityLogs * 0.75;
+
+    const score = roundToSingleDecimal(Math.max(0, Math.min(100, 100 - penalty)));
+
+    if (score >= 95) {
+      return { score, label: 'Optimal', tone: 'positive' };
+    }
+
+    if (score >= 85) {
+      return { score, label: 'Stable', tone: 'neutral' };
+    }
+
+    if (score >= 70) {
+      return { score, label: 'Watch', tone: 'negative' };
+    }
+
+    return { score, label: 'Degraded', tone: 'negative' };
+  }
+}
+
+function startOfDay(date: Date): Date {
+  const result = new Date(date);
+  result.setHours(0, 0, 0, 0);
+  return result;
+}
+
+function addDays(date: Date, amount: number): Date {
+  const result = new Date(date);
+  result.setDate(result.getDate() + amount);
+  return result;
+}
+
+function roundToSingleDecimal(value: number): number {
+  return Math.round(value * 10) / 10;
+}
+
+function formatHourLabel(value: Date): string {
+  return value.toLocaleTimeString('en-US', {
+    hour: '2-digit',
+    minute: '2-digit',
+    hour12: false,
+  });
+}

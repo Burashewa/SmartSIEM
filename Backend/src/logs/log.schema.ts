@@ -1,9 +1,13 @@
 import { Prop, Schema, SchemaFactory } from '@nestjs/mongoose';
 import { Document, Schema as MongooseSchema } from 'mongoose';
+import { randomUUID } from 'crypto';
 import { Severity } from './log.types';
 
 @Schema({ timestamps: false })
 export class Log extends Document {
+  @Prop({ type: String, required: true, unique: true, index: true, default: () => randomUUID() })
+  event_id!: string;
+
   @Prop({ type: Date, required: true })
   timestamp!: Date;
 

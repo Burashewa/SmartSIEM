@@ -1,6 +1,7 @@
 import { Module } from '@nestjs/common';
 import { MongooseModule } from '@nestjs/mongoose';
 import { RulesService } from './rules.service';
+import { RulesController } from './rules.controller';
 import { Log, LogSchema } from '../logs/log.schema';
 import { AlertsModule } from '../alerts/alerts.module';
 import { Alert, AlertSchema } from '../alerts/alert.schema';
@@ -18,6 +19,7 @@ import { RecommendationsModule } from '../recommendations/recommendations.module
     AlertsModule,
     RecommendationsModule,
   ],
+  controllers: [RulesController],
   providers: [RulesService, RuleEngineService, RuleLoaderService, RuleContextService],
   exports: [RulesService],
 })

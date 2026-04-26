@@ -1,4 +1,5 @@
 export class CreateLogDto {
+  event_id?: string;
   timestamp?: string;
   source?: string;
   severity?: string;

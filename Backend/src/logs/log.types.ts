@@ -1,6 +1,7 @@
 export type Severity = 'low' | 'medium' | 'high' | 'critical';
 
 export interface NormalizedLog {
+  event_id?: string;
   timestamp: Date;
   source: string;
   severity: Severity;

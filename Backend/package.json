@@ -4,9 +4,10 @@
   "description": "Simple SIEM backend in NestJS + MongoDB",
   "private": true,
   "scripts": {
+    "prestart": "npm run build",
     "start": "node dist/main.js",
     "start:dev": "nest start --watch",
-    "build": "nest build",
+    "build": "tsc -p tsconfig.json",
     "lint": "echo \"No lint configured\"",
     "test": "node -r ts-node/register src/logs/parsers/parsers.unit-test.ts"
   },
