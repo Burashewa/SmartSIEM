@@ -2,6 +2,7 @@ const isLocalDevPort = ["5173", "3000", "8080"].includes(window.location.port);
 const apiOrigin =
   window.location.origin === "null" || isLocalDevPort ? "http://localhost:5000" : window.location.origin;
 const API_BASE = `${apiOrigin}/api`;
+const AUTH_STORAGE_KEY = "smartsiem.auth.tokens";
 
 const recTitleEl = document.getElementById("recTitle");
 const recSummaryEl = document.getElementById("recSummary");
@@ -88,7 +89,15 @@ const alertId = params.get("id");
   }
 
   try {
-    const res = await fetch(`${API_BASE}/alerts/${encodeURIComponent(alertId)}`);
+    const tokenPayload = JSON.parse(localStorage.getItem(AUTH_STORAGE_KEY) || "{}");
+    const accessToken = tokenPayload.accessToken || "";
+    const res = await fetch(`${API_BASE}/alerts/${encodeURIComponent(alertId)}`, {
+      headers: accessToken ? { Authorization: `Bearer ${accessToken}` } : {},
+    });
+    if (res.status === 401) {
+      setError("You are signed out. Return to the dashboard and sign in again.");
+      return;
+    }
     if (res.status === 404) {
       setError("That alert could not be found. It may have been cleared.");
       return;

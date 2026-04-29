@@ -39,6 +39,8 @@ export class RuleContextService {
         };
 
         await this.alertsService.create({
+          agentId: log.agentId,
+          userId: log.userId,
           ruleId: input.ruleId,
           message: input.message,
           severity: input.severity,
@@ -52,7 +54,7 @@ export class RuleContextService {
 
   private async buildEnrichment(log: Log): Promise<AlertEnrichment> {
     const [previousAlertsFromIp, userRiskScore] = await Promise.all([
-      this.countAlertsFromIp(log.ip),
+      this.countAlertsFromIp(log.ip, log.userId),
       this.computeUserRiskScore(log),
     ]);
 
@@ -64,9 +66,18 @@ export class RuleContextService {
     };
   }
 
-  private async countAlertsFromIp(ip?: string): Promise<number | undefined> {
+  private async countAlertsFromIp(
+    ip?: string,
+    userId?: unknown,
+  ): Promise<number | undefined> {
     if (!ip) return undefined;
-    return this.alertModel.countDocuments({ ip });
+
+    const filter: Record<string, unknown> = { ip };
+    if (userId) {
+      filter.userId = userId;
+    }
+
+    return this.alertModel.countDocuments(filter);
   }
 
   private async computeUserRiskScore(log: Log): Promise<number | undefined> {
@@ -75,12 +86,13 @@ export class RuleContextService {
     const lookbackStart = new Date(log.timestamp.getTime() - 24 * 60 * 60 * 1000);
 
     const failedLogins = await this.logModel.countDocuments({
+      ...(log.userId ? { userId: log.userId } : {}),
       user: log.user,
       event: { $in: FAILED_LOGIN_EVENT_NAMES },
       timestamp: { $gte: lookbackStart, $lte: log.timestamp },
     });
 
-    const previousAlertsFromIp = await this.countAlertsFromIp(log.ip);
+    const previousAlertsFromIp = await this.countAlertsFromIpForUser(log.ip, log.userId);
     const ipScore = typeof previousAlertsFromIp === 'number' ? previousAlertsFromIp * 3 : 0;
     const score = Math.min(100, failedLogins * 5 + ipScore);
 
@@ -103,6 +115,20 @@ export class RuleContextService {
     const location = extractGeoPoint(log);
     if (!location) return undefined;
     return { ...location, source: 'log' };
+  }
+
+  private async countAlertsFromIpForUser(
+    ip: string | undefined,
+    userId: unknown,
+  ): Promise<number | undefined> {
+    if (!ip) return undefined;
+
+    const filter: Record<string, unknown> = { ip };
+    if (userId) {
+      filter.userId = userId;
+    }
+
+    return this.alertModel.countDocuments(filter);
   }
 }
 

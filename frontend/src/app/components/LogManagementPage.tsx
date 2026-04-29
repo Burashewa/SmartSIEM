@@ -19,10 +19,12 @@ const normalizeLog = (log: BackendLogRecord): LogEntry => {
   return {
     id: log._id ?? log.id ?? log.event_id ?? `${log.event}-${log.timestamp}`,
     timestamp: new Date(log.timestamp).toLocaleString(),
-    level: String(log.severity).toUpperCase(),
+    level: String(log.level ?? log.severity).toUpperCase(),
     source: log.source ?? 'Unknown source',
-    message: messageParts.length > 0 ? messageParts.join(' ') : log.event,
+    message: log.message ?? (messageParts.length > 0 ? messageParts.join(' ') : log.event),
     details: {
+      agentId: log.agentId,
+      userId: log.userId,
       event: log.event,
       action: log.action,
       status: log.status,
@@ -92,6 +94,10 @@ export function LogManagementPage() {
 
   const getLevelColor = (level: string) => {
     switch (level) {
+      case 'CRITICAL': return 'text-[#dc2626]';
+      case 'HIGH': return 'text-[#ef4444]';
+      case 'MEDIUM': return 'text-[#f59e0b]';
+      case 'LOW': return 'text-[#3b82f6]';
       case 'ERROR': return 'text-[#ef4444]';
       case 'WARN': return 'text-[#f59e0b]';
       case 'INFO': return 'text-[#3b82f6]';
@@ -128,6 +134,10 @@ export function LogManagementPage() {
               className="w-full bg-[#1a1a24] border border-[#2a2a3a] px-3 py-2 text-sm text-white focus:outline-none focus:border-[#4f46e5]"
             >
               <option value="all">All Levels</option>
+              <option value="CRITICAL">CRITICAL</option>
+              <option value="HIGH">HIGH</option>
+              <option value="MEDIUM">MEDIUM</option>
+              <option value="LOW">LOW</option>
               <option value="ERROR">ERROR</option>
               <option value="WARN">WARN</option>
               <option value="INFO">INFO</option>

@@ -2,8 +2,15 @@ import { Search, Bell, User, Activity } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { SystemStatus } from './SystemStatus';
 import { fetchSystemStatus, type SystemStatusResponse } from '../api/system';
+import type { SiemRole } from '../api/auth';
 
-export function Header() {
+interface HeaderProps {
+  username: string;
+  role: SiemRole;
+  onLogout: () => Promise<void>;
+}
+
+export function Header({ username, role, onLogout }: HeaderProps) {
   const [notificationCount] = useState(12);
   const [status, setStatus] = useState<SystemStatusResponse | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -44,7 +51,7 @@ export function Header() {
   return (
     <header className="h-16 bg-[#0f0f17] border-b border-[#1f1f2e] flex items-center justify-between px-6">
       {/* Search Bar */}
-      <div className="flex-1 max-w-2xl">
+      {/* <div className="flex-1 max-w-2xl">
         <div className="relative">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 size-4 text-gray-500" />
           <input
@@ -53,7 +60,7 @@ export function Header() {
             className="w-full bg-[#1a1a24] border border-[#2a2a3a] pl-10 pr-4 py-2 text-sm text-white placeholder:text-gray-500 focus:outline-none focus:border-[#4f46e5] transition-colors"
           />
         </div>
-      </div>
+      </div> */}
 
       {/* Right Section */}
       <div className="flex items-center gap-4 ml-6">
@@ -101,13 +108,20 @@ export function Header() {
         </button>
 
         {/* User Profile */}
-        <button className="flex items-center gap-2 px-3 py-1.5 hover:bg-[#1a1a24] transition-colors">
+        <button
+          type="button"
+          onClick={() => {
+            void onLogout();
+          }}
+          className="flex items-center gap-2 px-3 py-1.5 hover:bg-[#1a1a24] transition-colors"
+          title="Sign out"
+        >
           <div className="size-8 rounded-full bg-[#4f46e5] flex items-center justify-center">
             <User className="size-4 text-white" />
           </div>
           <div className="text-left">
-            <div className="text-sm text-white">Admin</div>
-            <div className="text-xs text-gray-500">SOC Analyst</div>
+            <div className="text-sm text-white">{username}</div>
+            <div className="text-xs text-gray-500">{role.toUpperCase()}</div>
           </div>
         </button>
       </div>

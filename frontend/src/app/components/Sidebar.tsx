@@ -10,10 +10,12 @@ import {
   Cpu,
   Lock
 } from 'lucide-react';
+import type { SiemRole } from '../api/auth';
 
 interface SidebarProps {
   currentPage: string;
   onNavigate: (page: string) => void;
+  role: SiemRole;
 }
 
 const navItems = [
@@ -29,7 +31,25 @@ const navItems = [
   { id: 'settings', label: 'Settings', icon: Settings },
 ];
 
-export function Sidebar({ currentPage, onNavigate }: SidebarProps) {
+export function Sidebar({ currentPage, onNavigate, role }: SidebarProps) {
+  const roleWeight: Record<SiemRole, number> = { security_analyst: 20, admin: 40 };
+  const minimumRoleByPage: Record<string, SiemRole> = {
+    dashboard: 'security_analyst',
+    logs: 'security_analyst',
+    alerts: 'security_analyst',
+    'threat-detection': 'security_analyst',
+    'detection-rules': 'security_analyst',
+    'ai-recommendations': 'security_analyst',
+    'access-control': 'security_analyst',
+    reports: 'security_analyst',
+    users: 'security_analyst',
+    settings: 'security_analyst',
+  };
+
+  const allowedItems = navItems.filter(
+    (item) => roleWeight[role] >= roleWeight[minimumRoleByPage[item.id] ?? 'security_analyst'],
+  );
+
   return (
     <div className="w-64 bg-[#0f0f17] border-r border-[#1f1f2e] flex flex-col">
       {/* Logo */}
@@ -43,7 +63,7 @@ export function Sidebar({ currentPage, onNavigate }: SidebarProps) {
 
       {/* Navigation */}
       <nav className="flex-1 py-6 px-3 overflow-y-auto">
-        {navItems.map((item) => {
+        {allowedItems.map((item) => {
           const Icon = item.icon;
           const isActive = currentPage === item.id;
           return (

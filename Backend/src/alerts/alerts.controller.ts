@@ -1,5 +1,11 @@
-import { Controller, Delete, Get, Param } from '@nestjs/common';
+import { Controller, Delete, Get, Param, Req } from '@nestjs/common';
 import { AlertsService } from './alerts.service';
+import { Roles } from '../auth/decorators/roles.decorator';
+import { AuthJwtPayload } from '../auth/auth.types';
+
+type AuthenticatedRequest = {
+  user?: AuthJwtPayload;
+};
 
 @Controller('alerts')
 export class AlertsController {
@@ -7,19 +13,22 @@ export class AlertsController {
 
   // GET /api/alerts
   @Get()
-  async list() {
-    return this.alertsService.list();
+  @Roles('security_analyst')
+  async list(@Req() request: AuthenticatedRequest) {
+    return this.alertsService.list(request.user!);
   }
 
   // GET /api/alerts/:id
   @Get(':id')
-  async getOne(@Param('id') id: string) {
-    return this.alertsService.findById(id);
+  @Roles('security_analyst')
+  async getOne(@Param('id') id: string, @Req() request: AuthenticatedRequest) {
+    return this.alertsService.findById(id, request.user!);
   }
 
   // DELETE /api/alerts
   @Delete()
-  async clear() {
-    return this.alertsService.clearAll();
+  @Roles('security_analyst')
+  async clear(@Req() request: AuthenticatedRequest) {
+    return this.alertsService.clearAll(request.user!);
   }
 }

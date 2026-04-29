@@ -1,3 +1,5 @@
+import { authFetch } from './auth';
+
 export interface SystemStatusResponse {
   generatedAt: string;
   ingestionRate: {
@@ -18,7 +20,7 @@ export interface SystemStatusResponse {
 }
 
 export async function fetchSystemStatus(): Promise<SystemStatusResponse> {
-  const response = await fetch('/api/system/status');
+  const response = await authFetch('/api/system/status');
 
   if (!response.ok) {
     throw new Error(`Failed to load system status (${response.status})`);

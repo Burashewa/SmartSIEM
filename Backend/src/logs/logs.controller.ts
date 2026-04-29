@@ -1,26 +1,43 @@
-import { Body, Controller, Delete, Get, Post } from '@nestjs/common';
+import { Body, Controller, Delete, Get, Post, Req, UseGuards } from '@nestjs/common';
 import { LogsService } from './logs.service';
 import { CreateLogDto } from './log.dto';
+import { Roles } from '../auth/decorators/roles.decorator';
+import { Public } from '../auth/decorators/public.decorator';
+import { AgentApiKeyGuard } from '../agents/guards/agent-api-key.guard';
+import { AuthJwtPayload } from '../auth/auth.types';
+
+type AuthenticatedRequest = {
+  user?: AuthJwtPayload;
+  agent?: {
+    agentId: string;
+    name: string;
+    userId: string;
+  };
+};
 
 @Controller('logs')
 export class LogsController {
   constructor(private readonly logsService: LogsService) {}
 
   // POST /api/logs
+  @Public()
   @Post()
-  async ingest(@Body() dto: CreateLogDto) {
-    return this.logsService.ingest(dto);
+  @UseGuards(AgentApiKeyGuard)
+  async ingest(@Body() dto: CreateLogDto, @Req() request: AuthenticatedRequest) {
+    return this.logsService.ingest(dto, request.agent!);
   }
 
   // GET /api/logs
   @Get()
-  async list() {
-    return this.logsService.list();
+  @Roles('security_analyst')
+  async list(@Req() request: AuthenticatedRequest) {
+    return this.logsService.list(request.user!);
   }
 
   // DELETE /api/logs
   @Delete()
-  async clear() {
-    return this.logsService.clearAll();
+  @Roles('security_analyst')
+  async clear(@Req() request: AuthenticatedRequest) {
+    return this.logsService.clearAll(request.user!);
   }
 }

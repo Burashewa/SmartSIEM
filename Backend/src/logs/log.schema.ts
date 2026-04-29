@@ -12,13 +12,25 @@ export class Log extends Document {
   timestamp!: Date;
 
   @Prop({ type: String, required: true, index: true })
+  agentId!: string;
+
+  @Prop({ type: MongooseSchema.Types.ObjectId, required: true, index: true })
+  userId!: MongooseSchema.Types.ObjectId;
+
+  @Prop({ type: String, required: true, index: true })
   source!: string;
 
   @Prop({ type: String, required: true, index: true })
   severity!: Severity;
 
   @Prop({ type: String, required: true, index: true })
+  level!: string;
+
+  @Prop({ type: String, required: true, index: true })
   event!: string;
+
+  @Prop({ type: String, required: true })
+  message!: string;
 
   @Prop({ type: String, required: false, index: true })
   action?: string;
@@ -79,3 +91,4 @@ LogSchema.index({ user: 1, event: 1, timestamp: -1 });
 LogSchema.index({ latitude: 1, longitude: 1, timestamp: -1 });
 LogSchema.index({ sessionId: 1, timestamp: -1 });
 LogSchema.index({ endpoint: 1, method: 1, timestamp: -1 });
+LogSchema.index({ userId: 1, agentId: 1, timestamp: -1 });

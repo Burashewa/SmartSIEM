@@ -8,6 +8,8 @@ import { LogsModule } from './logs/logs.module';
 import { AlertsModule } from './alerts/alerts.module';
 import { RulesModule } from './rules/rules.module';
 import { SystemModule } from './system/system.module';
+import { AuthModule } from './auth/auth.module';
+import { AgentsModule } from './agents/agents.module';
 
 @Module({
   imports: [
@@ -40,6 +42,8 @@ import { SystemModule } from './system/system.module';
     DashboardModule,
     RulesModule,
     SystemModule,
+    AuthModule,
+    AgentsModule,
   ],
 })
 export class AppModule {}

@@ -1,3 +1,5 @@
+import { authFetch } from './auth';
+
 export interface BackendRule {
   id: string;
   name: string;
@@ -10,7 +12,7 @@ export interface BackendRule {
 }
 
 export async function fetchRules(): Promise<BackendRule[]> {
-  const response = await fetch('/api/rules');
+  const response = await authFetch('/api/rules');
 
   if (!response.ok) {
     throw new Error(`Failed to load rules (${response.status})`);
@@ -20,7 +22,7 @@ export async function fetchRules(): Promise<BackendRule[]> {
 }
 
 export async function toggleRule(id: string, enabled: boolean): Promise<{ id: string; enabled: boolean }> {
-  const response = await fetch(`/api/rules/${id}/toggle`, {
+  const response = await authFetch(`/api/rules/${id}/toggle`, {
     method: 'PUT',
     headers: {
       'Content-Type': 'application/json',

@@ -12,6 +12,9 @@ const touchLastSync = () => {
 const refreshBtn = document.getElementById("refresh");
 const clearLogsBtn = document.getElementById("clearLogs");
 const clearAlertsBtn = document.getElementById("clearAlerts");
+const loginBtn = document.getElementById("loginBtn");
+const logoutBtn = document.getElementById("logoutBtn");
+const authInfoEl = document.getElementById("authInfo");
 const form = document.getElementById("logForm");
 const presetEl = document.getElementById("preset");
 const ruleHintEl = document.getElementById("ruleHint");
@@ -21,6 +24,122 @@ const isLocalDevPort = ["5173", "3000", "8080"].includes(window.location.port);
 const apiOrigin =
   window.location.origin === "null" || isLocalDevPort ? "http://localhost:5000" : window.location.origin;
 const API_BASE = `${apiOrigin}/api`;
+const AUTH_STORAGE_KEY = "smartsiem.auth.tokens";
+
+const authState = {
+  accessToken: "",
+  refreshToken: "",
+  role: "",
+  username: "",
+  refreshing: null,
+};
+
+const loadStoredAuth = () => {
+  try {
+    const value = localStorage.getItem(AUTH_STORAGE_KEY);
+    if (!value) return;
+    const parsed = JSON.parse(value);
+    authState.accessToken = parsed.accessToken || "";
+    authState.refreshToken = parsed.refreshToken || "";
+    authState.role = parsed.role || "";
+    authState.username = parsed.username || "";
+  } catch {
+    localStorage.removeItem(AUTH_STORAGE_KEY);
+  }
+};
+
+const persistAuth = () => {
+  localStorage.setItem(
+    AUTH_STORAGE_KEY,
+    JSON.stringify({
+      accessToken: authState.accessToken,
+      refreshToken: authState.refreshToken,
+      role: authState.role,
+      username: authState.username,
+    }),
+  );
+};
+
+const clearAuth = () => {
+  authState.accessToken = "";
+  authState.refreshToken = "";
+  authState.role = "";
+  authState.username = "";
+  localStorage.removeItem(AUTH_STORAGE_KEY);
+  updateAuthUi();
+};
+
+const updateAuthUi = () => {
+  const signedIn = Boolean(authState.accessToken);
+  if (authInfoEl) {
+    authInfoEl.textContent = signedIn ? `Signed in: ${authState.username} (${authState.role})` : "Not signed in";
+  }
+  if (loginBtn) loginBtn.hidden = signedIn;
+  if (logoutBtn) logoutBtn.hidden = !signedIn;
+  const isAdmin = authState.role === "admin";
+  clearLogsBtn.disabled = !isAdmin;
+  clearAlertsBtn.disabled = !isAdmin;
+};
+
+const attemptRefresh = async () => {
+  if (!authState.refreshToken) return false;
+  if (!authState.refreshing) {
+    authState.refreshing = fetch(`${API_BASE}/auth/refresh`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ refreshToken: authState.refreshToken }),
+    })
+      .then(async (res) => {
+        if (!res.ok) throw new Error("Unable to refresh session");
+        const data = await res.json();
+        authState.accessToken = data.accessToken;
+        authState.refreshToken = data.refreshToken;
+        persistAuth();
+        return true;
+      })
+      .catch(() => {
+        clearAuth();
+        return false;
+      })
+      .finally(() => {
+        authState.refreshing = null;
+      });
+  }
+  return authState.refreshing;
+};
+
+const apiFetch = async (path, options = {}) => {
+  const headers = { ...(options.headers || {}) };
+  if (authState.accessToken) headers.Authorization = `Bearer ${authState.accessToken}`;
+  let response = await fetch(`${API_BASE}${path}`, { ...options, headers });
+  if (response.status === 401) {
+    const refreshed = await attemptRefresh();
+    if (!refreshed) throw new Error("Authentication required");
+    const retryHeaders = { ...(options.headers || {}), Authorization: `Bearer ${authState.accessToken}` };
+    response = await fetch(`${API_BASE}${path}`, { ...options, headers: retryHeaders });
+  }
+  return response;
+};
+
+const login = async () => {
+  const username = window.prompt("Username");
+  if (!username) return;
+  const password = window.prompt("Password");
+  if (!password) return;
+  const res = await fetch(`${API_BASE}/auth/login`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ username, password }),
+  });
+  if (!res.ok) throw new Error(`Login failed (${res.status})`);
+  const data = await res.json();
+  authState.accessToken = data.accessToken;
+  authState.refreshToken = data.refreshToken;
+  authState.role = data.role;
+  authState.username = data.username;
+  persistAuth();
+  updateAuthUi();
+};
 
 const setStatus = (text) => {
   statusEl.textContent = text;
@@ -369,7 +488,7 @@ const renderLogs = (logs) => {
 const loadAlerts = async () => {
   setStatus("Loading alerts...");
   try {
-    const res = await fetch(`${API_BASE}/alerts`);
+    const res = await apiFetch(`/alerts`);
     if (!res.ok) throw new Error(`Alert fetch failed (${res.status})`);
     const data = await res.json();
     renderAlerts(data);
@@ -386,7 +505,7 @@ const loadAlerts = async () => {
 const loadLogs = async () => {
   setStatus("Loading logs...");
   try {
-    const res = await fetch(`${API_BASE}/logs`);
+    const res = await apiFetch(`/logs`);
     if (!res.ok) throw new Error(`Log fetch failed (${res.status})`);
     const data = await res.json();
     renderLogs(data);
@@ -406,7 +525,7 @@ const clearLogs = async () => {
 
   setStatus("Clearing logs...");
   try {
-    const res = await fetch(`${API_BASE}/logs`, { method: "DELETE" });
+    const res = await apiFetch(`/logs`, { method: "DELETE" });
     if (!res.ok) throw new Error(`Clear logs failed (${res.status})`);
     const data = await res.json();
     addActivity(`Cleared ${data.deletedCount ?? 0} logs`);
@@ -424,7 +543,7 @@ const clearAlerts = async () => {
 
   setStatus("Clearing alerts...");
   try {
-    const res = await fetch(`${API_BASE}/alerts`, { method: "DELETE" });
+    const res = await apiFetch(`/alerts`, { method: "DELETE" });
     if (!res.ok) throw new Error(`Clear alerts failed (${res.status})`);
     const data = await res.json();
     addActivity(`Cleared ${data.deletedCount ?? 0} alerts`);
@@ -483,7 +602,7 @@ form.addEventListener("submit", async (event) => {
       if (hasValidTimestamp && count > 1) {
         overrides.timestamp = new Date(timestampBase.getTime() + i * 1000).toISOString();
       }
-      const res = await fetch(`${API_BASE}/logs`, {
+      const res = await apiFetch(`/logs`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ ...payload, ...overrides }),
@@ -520,6 +639,30 @@ if (presetEl) {
 
 clearLogsBtn.addEventListener("click", clearLogs);
 clearAlertsBtn.addEventListener("click", clearAlerts);
+loginBtn.addEventListener("click", async () => {
+  try {
+    await login();
+    await loadAlerts();
+    await loadLogs();
+  } catch (err) {
+    addActivity(err.message || "Login failed", "error");
+  }
+});
+logoutBtn.addEventListener("click", async () => {
+  try {
+    if (authState.refreshToken) {
+      await apiFetch(`/auth/logout`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ refreshToken: authState.refreshToken }),
+      });
+    }
+  } catch {
+    // ignore logout failures, local logout still happens
+  } finally {
+    clearAuth();
+  }
+});
 
 if (presetEl) {
   applyPreset(presetEl.value);
@@ -527,5 +670,11 @@ if (presetEl) {
   setVisibleFields(null);
 }
 
-loadAlerts();
-loadLogs();
+loadStoredAuth();
+updateAuthUi();
+if (authState.accessToken) {
+  loadAlerts();
+  loadLogs();
+} else {
+  addActivity("Sign in to access SIEM data.");
+}

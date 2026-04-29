@@ -9,11 +9,13 @@ import { LOG_PARSERS } from './parsers/log-parser.interface';
 import { NginxLogParser } from './parsers/nginx-log.parser';
 import { SyslogLogParser } from './parsers/syslog-log.parser';
 import { GenericLogParser } from './parsers/generic-log.parser';
+import { AgentsModule } from '../agents/agents.module';
 
 @Module({
   imports: [
     MongooseModule.forFeature([{ name: Log.name, schema: LogSchema }]),
     RulesModule,
+    AgentsModule,
   ],
   controllers: [LogsController],
   providers: [

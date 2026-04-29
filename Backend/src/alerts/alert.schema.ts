@@ -1,10 +1,16 @@
 import { Prop, Schema, SchemaFactory } from '@nestjs/mongoose';
-import { Document } from 'mongoose';
+import { Document, Schema as MongooseSchema } from 'mongoose';
 
 export type AlertStatus = 'open' | 'investigating' | 'resolved';
 
 @Schema({ timestamps: true })
 export class Alert extends Document {
+  @Prop({ type: String, required: false, index: true })
+  agentId?: string;
+
+  @Prop({ type: MongooseSchema.Types.ObjectId, required: false, index: true })
+  userId?: MongooseSchema.Types.ObjectId;
+
   @Prop({ type: String, required: true, index: true })
   ruleId!: string;
 

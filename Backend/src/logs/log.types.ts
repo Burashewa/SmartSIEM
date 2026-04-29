@@ -5,8 +5,12 @@ export interface NormalizedLog {
   timestamp: Date;
   source: string;
   severity: Severity;
+  level?: string;
+  message?: string;
   /** Canonical event name used by detection rules (may be derived from event+action+status). */
   event: string;
+  agentId?: string;
+  userId?: string;
 
   action?: string;
   status?: string;

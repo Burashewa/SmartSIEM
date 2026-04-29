@@ -1,3 +1,5 @@
+import { authFetch } from './auth';
+
 export interface DashboardMetric {
   value: number;
   trend: string;
@@ -13,9 +15,13 @@ export interface BackendLogRecord {
   id?: string;
   event_id?: string;
   timestamp: string;
+  agentId?: string;
+  userId?: string;
   source: string;
+  level?: string;
   severity: BackendSeverity | string;
   event: string;
+  message?: string;
   action?: string;
   status?: string;
   user?: string;
@@ -34,6 +40,7 @@ export interface BackendAlertRecord {
   _id?: string;
   alert_id?: string;
   rule_id?: string;
+  ruleId?: string;
   rule_name?: string;
   message?: string;
   severity: BackendSeverity | string;
@@ -69,7 +76,7 @@ export interface DashboardSummaryResponse {
 }
 
 export async function fetchDashboardSummary(): Promise<DashboardSummaryResponse> {
-  const response = await fetch('/api/dashboard/summary');
+  const response = await authFetch('/api/dashboard/summary');
 
   if (!response.ok) {
     throw new Error(`Failed to load dashboard summary (${response.status})`);
@@ -79,7 +86,7 @@ export async function fetchDashboardSummary(): Promise<DashboardSummaryResponse>
 }
 
 export async function fetchDashboardLogs(): Promise<BackendLogRecord[]> {
-  const response = await fetch('/api/logs');
+  const response = await authFetch('/api/logs');
 
   if (!response.ok) {
     throw new Error(`Failed to load dashboard logs (${response.status})`);
@@ -89,7 +96,7 @@ export async function fetchDashboardLogs(): Promise<BackendLogRecord[]> {
 }
 
 export async function fetchDashboardAlerts(): Promise<BackendAlertRecord[]> {
-  const response = await fetch('/api/alerts');
+  const response = await authFetch('/api/alerts');
 
   if (!response.ok) {
     throw new Error(`Failed to load dashboard alerts (${response.status})`);
@@ -99,7 +106,7 @@ export async function fetchDashboardAlerts(): Promise<BackendAlertRecord[]> {
 }
 
 export async function fetchLogs(): Promise<BackendLogRecord[]> {
-  const response = await fetch('/api/logs');
+  const response = await authFetch('/api/logs');
 
   if (!response.ok) {
     throw new Error(`Failed to load logs (${response.status})`);
@@ -109,7 +116,7 @@ export async function fetchLogs(): Promise<BackendLogRecord[]> {
 }
 
 export async function fetchAlerts(): Promise<BackendAlertRecord[]> {
-  const response = await fetch('/api/alerts');
+  const response = await authFetch('/api/alerts');
 
   if (!response.ok) {
     throw new Error(`Failed to load alerts (${response.status})`);

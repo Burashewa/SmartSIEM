@@ -1,647 +1,611 @@
-import { useState } from 'react';
-import { Settings as SettingsIcon, Server, Wifi, WifiOff, Key, Database, Clock, Save, Plus, Edit2, Trash2, RefreshCw, CheckCircle2, AlertTriangle, Copy, Eye, EyeOff, Shield } from 'lucide-react';
+import { useEffect, useState } from 'react';
+import {
+  AlertTriangle,
+  CheckCircle2,
+  Clock,
+  Copy,
+  Eye,
+  EyeOff,
+  Key,
+  Plus,
+  RefreshCw,
+  RotateCw,
+  Server,
+  Settings as SettingsIcon,
+  Shield,
+} from 'lucide-react';
+import {
+  createAgent,
+  fetchAgents,
+  regenerateAgentApiKey,
+  revealAgentApiKey,
+  type AgentApiKeyStorageMode,
+  type AgentRecord,
+  type CreatedAgentRecord,
+} from '../api/agents';
 
-interface LogCollector {
-  id: string;
-  name: string;
-  type: 'web-server' | 'network-device' | 'database' | 'firewall' | 'endpoint';
-  sourceIp: string;
-  status: 'connected' | 'disconnected' | 'error';
-  lastSeen: string;
-  logsReceived: number;
-  location: string;
-}
-
-interface APIKey {
-  id: string;
-  name: string;
-  key: string;
-  created: string;
-  lastUsed: string;
-  permissions: string[];
-}
-
-const logCollectors: LogCollector[] = [
+const STORAGE_OPTIONS: Array<{
+  value: AgentApiKeyStorageMode;
+  label: string;
+  description: string;
+}> = [
   {
-    id: 'col-001',
-    name: 'Production Web Server 01',
-    type: 'web-server',
-    sourceIp: '192.168.1.10',
-    status: 'connected',
-    lastSeen: '2026-03-04T14:23:00Z',
-    logsReceived: 145832,
-    location: 'US-East-1',
+    value: 'one_time',
+    label: 'One-time only',
+    description: 'Highest secrecy. The raw key is shown once and cannot be revealed later.',
   },
   {
-    id: 'col-002',
-    name: 'Production Web Server 02',
-    type: 'web-server',
-    sourceIp: '192.168.1.11',
-    status: 'connected',
-    lastSeen: '2026-03-04T14:22:45Z',
-    logsReceived: 138924,
-    location: 'US-East-1',
-  },
-  {
-    id: 'col-003',
-    name: 'Core Router 01',
-    type: 'network-device',
-    sourceIp: '10.0.0.1',
-    status: 'connected',
-    lastSeen: '2026-03-04T14:23:10Z',
-    logsReceived: 892445,
-    location: 'Data Center A',
-  },
-  {
-    id: 'col-004',
-    name: 'Perimeter Firewall',
-    type: 'firewall',
-    sourceIp: '203.0.113.1',
-    status: 'connected',
-    lastSeen: '2026-03-04T14:23:05Z',
-    logsReceived: 524789,
-    location: 'DMZ',
-  },
-  {
-    id: 'col-005',
-    name: 'Edge Switch 05',
-    type: 'network-device',
-    sourceIp: '10.0.5.254',
-    status: 'error',
-    lastSeen: '2026-03-04T12:45:30Z',
-    logsReceived: 45621,
-    location: 'Building B',
-  },
-  {
-    id: 'col-006',
-    name: 'Database Server Primary',
-    type: 'database',
-    sourceIp: '172.16.0.10',
-    status: 'connected',
-    lastSeen: '2026-03-04T14:22:55Z',
-    logsReceived: 67234,
-    location: 'Data Center A',
-  },
-  {
-    id: 'col-007',
-    name: 'VPN Gateway',
-    type: 'network-device',
-    sourceIp: '203.0.113.50',
-    status: 'disconnected',
-    lastSeen: '2026-03-04T08:15:22Z',
-    logsReceived: 23456,
-    location: 'Remote Office',
-  },
-  {
-    id: 'col-008',
-    name: 'Endpoint Security Agent',
-    type: 'endpoint',
-    sourceIp: '192.168.10.0/24',
-    status: 'connected',
-    lastSeen: '2026-03-04T14:23:12Z',
-    logsReceived: 312456,
-    location: 'Corporate Network',
-  },
-];
-
-const initialAPIKeys: APIKey[] = [
-  {
-    id: 'key-001',
-    name: 'Production Log Ingestion',
-    key: 'siem_prod_7f8a9b2c4d6e1f3a5b7c9d2e4f6a8b1c',
-    created: '2026-01-15T10:00:00Z',
-    lastUsed: '2026-03-04T14:20:00Z',
-    permissions: ['log:write', 'log:read'],
-  },
-  {
-    id: 'key-002',
-    name: 'Development Environment',
-    key: 'siem_dev_1a2b3c4d5e6f7a8b9c0d1e2f3a4b5c6d',
-    created: '2026-02-01T09:30:00Z',
-    lastUsed: '2026-03-03T16:45:00Z',
-    permissions: ['log:write', 'log:read', 'alert:read'],
-  },
-  {
-    id: 'key-003',
-    name: 'Monitoring Dashboard',
-    key: 'siem_monitor_9f8e7d6c5b4a3f2e1d0c9b8a7f6e5d4c',
-    created: '2026-01-20T14:15:00Z',
-    lastUsed: '2026-03-04T14:15:30Z',
-    permissions: ['log:read', 'alert:read', 'dashboard:read'],
+    value: 'stored',
+    label: 'Store encrypted',
+    description: 'The raw key is encrypted at rest so you can reveal or rotate it later.',
   },
 ];
 
 export function SettingsPage() {
-  const [collectors] = useState(logCollectors);
-  const [apiKeys] = useState(initialAPIKeys);
-  const [retentionDays, setRetentionDays] = useState(90);
-  const [archiveEnabled, setArchiveEnabled] = useState(true);
-  const [compressionEnabled, setCompressionEnabled] = useState(true);
-  const [showNewCollectorForm, setShowNewCollectorForm] = useState(false);
-  const [showNewAPIKeyForm, setShowNewAPIKeyForm] = useState(false);
-  const [visibleKeys, setVisibleKeys] = useState<Set<string>>(new Set());
-  const [testingConnection, setTestingConnection] = useState<string | null>(null);
+  const [agents, setAgents] = useState<AgentRecord[]>([]);
+  const [agentsError, setAgentsError] = useState<string | null>(null);
+  const [isLoadingAgents, setIsLoadingAgents] = useState(true);
+  const [isRefreshingAgents, setIsRefreshingAgents] = useState(false);
+  const [showNewAgentForm, setShowNewAgentForm] = useState(false);
+  const [newAgentName, setNewAgentName] = useState('');
+  const [newAgentStorageMode, setNewAgentStorageMode] =
+    useState<AgentApiKeyStorageMode>('one_time');
+  const [isCreatingAgent, setIsCreatingAgent] = useState(false);
+  const [latestCreatedAgent, setLatestCreatedAgent] = useState<CreatedAgentRecord | null>(null);
+  const [showLatestApiKey, setShowLatestApiKey] = useState(true);
+  const [copyFeedback, setCopyFeedback] = useState<string | null>(null);
+  const [revealedKeys, setRevealedKeys] = useState<Record<string, string>>({});
+  const [revealingAgentId, setRevealingAgentId] = useState<string | null>(null);
+  const [regenerateAgentId, setRegenerateAgentId] = useState<string | null>(null);
+  const [regenerateStorageMode, setRegenerateStorageMode] =
+    useState<AgentApiKeyStorageMode>('one_time');
+  const [regeneratingAgentId, setRegeneratingAgentId] = useState<string | null>(null);
 
-  const getStatusColor = (status: string) => {
-    switch (status) {
-      case 'connected':
-        return 'text-[#10b981] bg-[#10b981]/20 border-[#10b981]/30';
-      case 'disconnected':
-        return 'text-gray-400 bg-gray-700/20 border-gray-700/30';
-      case 'error':
-        return 'text-[#ef4444] bg-[#ef4444]/20 border-[#ef4444]/30';
-      default:
-        return 'text-gray-400 bg-gray-700/20 border-gray-700/30';
+  useEffect(() => {
+    void loadAgents();
+  }, []);
+
+  async function loadAgents(isManualRefresh = false) {
+    if (isManualRefresh) {
+      setIsRefreshingAgents(true);
+    } else {
+      setIsLoadingAgents(true);
+    }
+
+    try {
+      const nextAgents = await fetchAgents();
+      setAgents(nextAgents);
+      setAgentsError(null);
+    } catch (error) {
+      setAgentsError(error instanceof Error ? error.message : 'Failed to load agents');
+    } finally {
+      setIsLoadingAgents(false);
+      setIsRefreshingAgents(false);
+    }
+  }
+
+  const copyText = async (text: string, feedbackKey: string) => {
+    try {
+      await navigator.clipboard.writeText(text);
+      setCopyFeedback(feedbackKey);
+      window.setTimeout(() => {
+        setCopyFeedback((current) => (current === feedbackKey ? null : current));
+      }, 2000);
+    } catch {
+      setCopyFeedback(null);
     }
   };
 
-  const getStatusIcon = (status: string) => {
-    switch (status) {
-      case 'connected':
-        return <Wifi className="size-4" />;
-      case 'disconnected':
-        return <WifiOff className="size-4" />;
-      case 'error':
-        return <AlertTriangle className="size-4" />;
-      default:
-        return <WifiOff className="size-4" />;
+  const handleCreateAgent = async () => {
+    const trimmedName = newAgentName.trim();
+    if (!trimmedName) {
+      setAgentsError('Agent name is required');
+      return;
+    }
+
+    setIsCreatingAgent(true);
+    try {
+      const createdAgent = await createAgent(trimmedName, newAgentStorageMode === 'stored');
+      setLatestCreatedAgent(createdAgent);
+      setShowLatestApiKey(true);
+      setShowNewAgentForm(false);
+      setNewAgentName('');
+      setNewAgentStorageMode('one_time');
+      setAgentsError(null);
+      await loadAgents(true);
+    } catch (error) {
+      setAgentsError(error instanceof Error ? error.message : 'Failed to create agent');
+    } finally {
+      setIsCreatingAgent(false);
     }
   };
 
-  const getTypeIcon = (type: string) => {
-    switch (type) {
-      case 'web-server':
-        return <Server className="size-5 text-[#3b82f6]" />;
-      case 'network-device':
-        return <Wifi className="size-5 text-[#10b981]" />;
-      case 'database':
-        return <Database className="size-5 text-[#8b5cf6]" />;
-      case 'firewall':
-        return <Shield className="size-5 text-[#ef4444]" />;
-      case 'endpoint':
-        return <Server className="size-5 text-[#f59e0b]" />;
-      default:
-        return <Server className="size-5 text-gray-400" />;
+  const handleToggleReveal = async (agent: AgentRecord) => {
+    if (revealedKeys[agent.agentId]) {
+      setRevealedKeys((current) => {
+        const next = { ...current };
+        delete next[agent.agentId];
+        return next;
+      });
+      return;
+    }
+
+    setRevealingAgentId(agent.agentId);
+    try {
+      const revealed = await revealAgentApiKey(agent.agentId);
+      setRevealedKeys((current) => ({ ...current, [agent.agentId]: revealed.apiKey }));
+      setAgentsError(null);
+    } catch (error) {
+      setAgentsError(error instanceof Error ? error.message : 'Failed to reveal API key');
+    } finally {
+      setRevealingAgentId(null);
     }
   };
 
-  const testConnection = (collectorId: string) => {
-    setTestingConnection(collectorId);
-    setTimeout(() => {
-      setTestingConnection(null);
-      // Simulate connection test result
-    }, 2000);
+  const openRegeneratePanel = (agent: AgentRecord) => {
+    setRegenerateAgentId(agent.agentId);
+    setRegenerateStorageMode(agent.apiKeyStorageMode);
   };
 
-  const toggleKeyVisibility = (keyId: string) => {
-    setVisibleKeys(prev => {
-      const newSet = new Set(prev);
-      if (newSet.has(keyId)) {
-        newSet.delete(keyId);
-      } else {
-        newSet.add(keyId);
-      }
-      return newSet;
-    });
+  const handleRegenerate = async (agent: AgentRecord) => {
+    setRegeneratingAgentId(agent.agentId);
+    try {
+      const regenerated = await regenerateAgentApiKey(
+        agent.agentId,
+        regenerateStorageMode === 'stored',
+      );
+      setLatestCreatedAgent(regenerated);
+      setShowLatestApiKey(true);
+      setRegenerateAgentId(null);
+      setRevealedKeys((current) => {
+        const next = { ...current };
+        delete next[agent.agentId];
+        return next;
+      });
+      setAgentsError(null);
+      await loadAgents(true);
+    } catch (error) {
+      setAgentsError(error instanceof Error ? error.message : 'Failed to regenerate API key');
+    } finally {
+      setRegeneratingAgentId(null);
+    }
   };
 
-  const copyToClipboard = (text: string) => {
-    navigator.clipboard.writeText(text);
+  const maskApiKey = (apiKey: string) => {
+    if (apiKey.length <= 16) {
+      return '*'.repeat(Math.max(apiKey.length, 8));
+    }
+
+    return `${apiKey.slice(0, 14)}${'*'.repeat(18)}`;
   };
 
-  const maskAPIKey = (key: string) => {
-    return key.substring(0, 15) + '•'.repeat(20);
-  };
-
-  const connectedCount = collectors.filter(c => c.status === 'connected').length;
-  const disconnectedCount = collectors.filter(c => c.status === 'disconnected').length;
-  const errorCount = collectors.filter(c => c.status === 'error').length;
+  const latestAgentCreatedAt = agents[0]?.createdAt;
 
   return (
     <div className="space-y-6">
-      {/* Header */}
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-3xl text-white mb-2">System Settings</h1>
           <p className="text-gray-400">
-            Configure data sources, API keys, and system parameters
+            Manage ingestion agents and choose how API keys are handled.
           </p>
         </div>
         <div className="flex items-center gap-2 px-4 py-2 bg-[#4f46e5]/20 border border-[#4f46e5]/30 rounded">
           <SettingsIcon className="size-5 text-[#4f46e5]" />
-          <span className="text-sm text-[#4f46e5] font-medium">System Configuration</span>
+          <span className="text-sm text-[#4f46e5] font-medium">Backend Connected</span>
         </div>
       </div>
 
-      {/* Log Collector Status */}
-      <div className="bg-[#0f0f17] border border-[#1f1f2e] rounded-lg p-6 space-y-6">
-        <div className="flex items-center justify-between">
-          <div>
-            <h2 className="text-xl text-white mb-2 flex items-center gap-2">
-              <Server className="size-5 text-[#4f46e5]" />
-              Log Collector Status
-            </h2>
-            <p className="text-sm text-gray-400">
-              Monitor external systems and data source connections
-            </p>
-          </div>
-          <button
-            onClick={() => setShowNewCollectorForm(!showNewCollectorForm)}
-            className="flex items-center gap-2 px-4 py-2 bg-[#4f46e5] hover:bg-[#6366f1] text-white rounded transition-colors text-sm font-medium"
-          >
-            <Plus className="size-4" />
-            Add Collector
-          </button>
-        </div>
-
-        {/* Status Summary */}
-        <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-          <div className="bg-[#0a0a0f] border border-[#1f1f2e] rounded-lg p-4">
-            <div className="flex items-center justify-between mb-2">
-              <span className="text-sm text-gray-400">Total Collectors</span>
-              <Server className="size-4 text-[#4f46e5]" />
-            </div>
-            <p className="text-2xl text-white font-bold">{collectors.length}</p>
-          </div>
-          <div className="bg-[#0a0a0f] border border-[#10b981]/30 rounded-lg p-4">
-            <div className="flex items-center justify-between mb-2">
-              <span className="text-sm text-gray-400">Connected</span>
-              <Wifi className="size-4 text-[#10b981]" />
-            </div>
-            <p className="text-2xl text-[#10b981] font-bold">{connectedCount}</p>
-          </div>
-          <div className="bg-[#0a0a0f] border border-gray-700/30 rounded-lg p-4">
-            <div className="flex items-center justify-between mb-2">
-              <span className="text-sm text-gray-400">Disconnected</span>
-              <WifiOff className="size-4 text-gray-400" />
-            </div>
-            <p className="text-2xl text-gray-400 font-bold">{disconnectedCount}</p>
-          </div>
-          <div className="bg-[#0a0a0f] border border-[#ef4444]/30 rounded-lg p-4">
-            <div className="flex items-center justify-between mb-2">
-              <span className="text-sm text-gray-400">Errors</span>
-              <AlertTriangle className="size-4 text-[#ef4444]" />
-            </div>
-            <p className="text-2xl text-[#ef4444] font-bold">{errorCount}</p>
-          </div>
-        </div>
-
-        {/* Collectors List */}
-        <div className="space-y-3">
-          {collectors.map((collector) => (
-            <div
-              key={collector.id}
-              className="bg-[#0a0a0f] border border-[#1f1f2e] rounded-lg p-4 hover:border-[#2a2a3a] transition-colors"
-            >
-              <div className="flex items-center justify-between">
-                <div className="flex items-center gap-4 flex-1">
-                  <div className="p-2 bg-[#1a1a24] rounded">
-                    {getTypeIcon(collector.type)}
-                  </div>
-                  <div className="flex-1">
-                    <div className="flex items-center gap-3 mb-1">
-                      <h3 className="text-white font-medium">{collector.name}</h3>
-                      <span className={`flex items-center gap-1.5 text-xs px-2.5 py-1 border rounded ${getStatusColor(collector.status)}`}>
-                        {getStatusIcon(collector.status)}
-                        {collector.status.toUpperCase()}
-                      </span>
-                    </div>
-                    <div className="flex items-center gap-4 text-sm text-gray-400">
-                      <span className="flex items-center gap-1.5 font-mono">
-                        <Wifi className="size-3" />
-                        {collector.sourceIp}
-                      </span>
-                      <span>•</span>
-                      <span>{collector.location}</span>
-                      <span>•</span>
-                      <span>{collector.logsReceived.toLocaleString()} logs</span>
-                      <span>•</span>
-                      <span className="text-xs">
-                        Last seen: {new Date(collector.lastSeen).toLocaleString()}
-                      </span>
-                    </div>
-                  </div>
-                </div>
-                <div className="flex items-center gap-2">
-                  <button
-                    onClick={() => testConnection(collector.id)}
-                    disabled={testingConnection === collector.id}
-                    className="p-2 text-gray-400 hover:text-white hover:bg-[#1a1a24] rounded transition-colors disabled:opacity-50"
-                    title="Test Connection"
-                  >
-                    <RefreshCw className={`size-4 ${testingConnection === collector.id ? 'animate-spin' : ''}`} />
-                  </button>
-                  <button
-                    className="p-2 text-gray-400 hover:text-white hover:bg-[#1a1a24] rounded transition-colors"
-                    title="Edit"
-                  >
-                    <Edit2 className="size-4" />
-                  </button>
-                  <button
-                    className="p-2 text-gray-400 hover:text-[#ef4444] hover:bg-[#ef4444]/10 rounded transition-colors"
-                    title="Delete"
-                  >
-                    <Trash2 className="size-4" />
-                  </button>
-                </div>
-              </div>
-            </div>
-          ))}
-        </div>
-
-        {/* Add New Collector Form */}
-        {showNewCollectorForm && (
-          <div className="bg-[#0a0a0f] border border-[#4f46e5]/30 rounded-lg p-6 space-y-4">
-            <h3 className="text-white font-medium mb-4">Add New Log Collector</h3>
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              <div>
-                <label className="text-sm text-gray-400 mb-2 block">Collector Name</label>
-                <input
-                  type="text"
-                  placeholder="e.g., Production Web Server 03"
-                  className="w-full bg-[#1a1a24] border border-[#2a2a3a] px-4 py-2.5 text-sm text-white placeholder:text-gray-500 focus:outline-none focus:border-[#4f46e5] transition-colors rounded"
-                />
-              </div>
-              <div>
-                <label className="text-sm text-gray-400 mb-2 block">Collector Type</label>
-                <select className="w-full bg-[#1a1a24] border border-[#2a2a3a] px-4 py-2.5 text-sm text-white focus:outline-none focus:border-[#4f46e5] transition-colors rounded">
-                  <option value="web-server">Web Server</option>
-                  <option value="network-device">Network Device</option>
-                  <option value="database">Database</option>
-                  <option value="firewall">Firewall</option>
-                  <option value="endpoint">Endpoint</option>
-                </select>
-              </div>
-              <div>
-                <label className="text-sm text-gray-400 mb-2 block">Source IP Address</label>
-                <input
-                  type="text"
-                  placeholder="e.g., 192.168.1.12"
-                  className="w-full bg-[#1a1a24] border border-[#2a2a3a] px-4 py-2.5 text-sm text-white font-mono placeholder:text-gray-500 focus:outline-none focus:border-[#4f46e5] transition-colors rounded"
-                />
-              </div>
-              <div>
-                <label className="text-sm text-gray-400 mb-2 block">Location</label>
-                <input
-                  type="text"
-                  placeholder="e.g., US-East-1"
-                  className="w-full bg-[#1a1a24] border border-[#2a2a3a] px-4 py-2.5 text-sm text-white placeholder:text-gray-500 focus:outline-none focus:border-[#4f46e5] transition-colors rounded"
-                />
-              </div>
-            </div>
-            <div className="flex items-center gap-3 pt-2">
-              <button className="px-4 py-2 bg-[#4f46e5] hover:bg-[#6366f1] text-white rounded transition-colors text-sm font-medium">
-                Add Collector
-              </button>
-              <button
-                onClick={() => setShowNewCollectorForm(false)}
-                className="px-4 py-2 bg-[#1a1a24] border border-[#2a2a3a] text-gray-300 hover:text-white rounded transition-colors text-sm"
-              >
-                Cancel
-              </button>
-            </div>
-          </div>
-        )}
-      </div>
-
-      {/* API Key Management */}
       <div className="bg-[#0f0f17] border border-[#1f1f2e] rounded-lg p-6 space-y-6">
         <div className="flex items-center justify-between">
           <div>
             <h2 className="text-xl text-white mb-2 flex items-center gap-2">
               <Key className="size-5 text-[#4f46e5]" />
-              API Key Management
+              Agent Management
             </h2>
             <p className="text-sm text-gray-400">
-              Manage API keys for secure log ingestion and system access
+              Create agents, choose one-time versus encrypted storage, and rotate secrets safely.
             </p>
           </div>
-          <button
-            onClick={() => setShowNewAPIKeyForm(!showNewAPIKeyForm)}
-            className="flex items-center gap-2 px-4 py-2 bg-[#4f46e5] hover:bg-[#6366f1] text-white rounded transition-colors text-sm font-medium"
-          >
-            <Plus className="size-4" />
-            Generate API Key
-          </button>
+          <div className="flex items-center gap-2">
+            <button
+              onClick={() => void loadAgents(true)}
+              disabled={isLoadingAgents || isRefreshingAgents}
+              className="flex items-center gap-2 px-4 py-2 bg-[#1a1a24] hover:bg-[#2a2a3a] border border-[#2a2a3a] text-white rounded transition-colors text-sm font-medium disabled:opacity-60"
+            >
+              <RefreshCw className={`size-4 ${isRefreshingAgents ? 'animate-spin' : ''}`} />
+              Refresh
+            </button>
+            <button
+              onClick={() => setShowNewAgentForm((current) => !current)}
+              className="flex items-center gap-2 px-4 py-2 bg-[#4f46e5] hover:bg-[#6366f1] text-white rounded transition-colors text-sm font-medium"
+            >
+              <Plus className="size-4" />
+              Create Agent
+            </button>
+          </div>
         </div>
 
-        {/* API Keys List */}
-        <div className="space-y-3">
-          {apiKeys.map((apiKey) => (
-            <div
-              key={apiKey.id}
-              className="bg-[#0a0a0f] border border-[#1f1f2e] rounded-lg p-4 hover:border-[#2a2a3a] transition-colors"
-            >
-              <div className="flex items-start justify-between mb-3">
-                <div className="flex-1">
-                  <h3 className="text-white font-medium mb-2">{apiKey.name}</h3>
-                  <div className="flex items-center gap-2 mb-3">
-                    <code className="flex-1 bg-[#1a1a24] border border-[#2a2a3a] px-3 py-2 text-sm text-gray-300 font-mono rounded">
-                      {visibleKeys.has(apiKey.id) ? apiKey.key : maskAPIKey(apiKey.key)}
-                    </code>
-                    <button
-                      onClick={() => toggleKeyVisibility(apiKey.id)}
-                      className="p-2 text-gray-400 hover:text-white hover:bg-[#1a1a24] rounded transition-colors"
-                      title={visibleKeys.has(apiKey.id) ? 'Hide Key' : 'Show Key'}
-                    >
-                      {visibleKeys.has(apiKey.id) ? <EyeOff className="size-4" /> : <Eye className="size-4" />}
-                    </button>
-                    <button
-                      onClick={() => copyToClipboard(apiKey.key)}
-                      className="p-2 text-gray-400 hover:text-white hover:bg-[#1a1a24] rounded transition-colors"
-                      title="Copy to Clipboard"
-                    >
-                      <Copy className="size-4" />
-                    </button>
-                  </div>
-                  <div className="flex items-center gap-4 text-xs text-gray-400">
-                    <span>Created: {new Date(apiKey.created).toLocaleDateString()}</span>
-                    <span>•</span>
-                    <span>Last used: {new Date(apiKey.lastUsed).toLocaleString()}</span>
-                  </div>
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+          <div className="bg-[#0a0a0f] border border-[#1f1f2e] rounded-lg p-4">
+            <div className="flex items-center justify-between mb-2">
+              <span className="text-sm text-gray-400">Registered Agents</span>
+              <Server className="size-4 text-[#4f46e5]" />
+            </div>
+            <p className="text-2xl text-white font-bold">{agents.length}</p>
+          </div>
+          <div className="bg-[#0a0a0f] border border-[#1f1f2e] rounded-lg p-4">
+            <div className="flex items-center justify-between mb-2">
+              <span className="text-sm text-gray-400">Latest Registration</span>
+              <Clock className="size-4 text-[#10b981]" />
+            </div>
+            <p className="text-sm text-white font-medium">
+              {latestAgentCreatedAt ? new Date(latestAgentCreatedAt).toLocaleString() : 'No agents yet'}
+            </p>
+          </div>
+          <div className="bg-[#0a0a0f] border border-[#1f1f2e] rounded-lg p-4">
+            <div className="flex items-center justify-between mb-2">
+              <span className="text-sm text-gray-400">Security Model</span>
+              <Shield className="size-4 text-[#f59e0b]" />
+            </div>
+            <p className="text-sm text-gray-300 leading-relaxed">
+              One-time mode maximizes secrecy. Stored mode encrypts the raw key at rest for later reveal.
+            </p>
+          </div>
+        </div>
+
+        {agentsError ? (
+          <div className="flex items-start gap-3 rounded-lg border border-[#ef4444]/30 bg-[#ef4444]/10 px-4 py-3 text-sm text-[#fecaca]">
+            <AlertTriangle className="mt-0.5 size-4 shrink-0" />
+            <span>{agentsError}</span>
+          </div>
+        ) : null}
+
+        {latestCreatedAgent ? (
+          <div className="bg-[#0a0a0f] border border-[#10b981]/30 rounded-lg p-6 space-y-4">
+            <div className="flex items-start justify-between gap-4">
+              <div>
+                <div className="flex items-center gap-2 mb-2">
+                  <CheckCircle2 className="size-5 text-[#10b981]" />
+                  <h3 className="text-white font-medium">API Key Ready</h3>
                 </div>
+                <p className="text-sm text-gray-400">
+                  {latestCreatedAgent.apiKeyStorageMode === 'stored'
+                    ? 'This key is encrypted in the database and can be revealed later by the owner.'
+                    : 'This key is one-time only. Save it now because it cannot be revealed later.'}
+                </p>
+              </div>
+              <button
+                onClick={() => setLatestCreatedAgent(null)}
+                className="px-3 py-1.5 bg-[#1a1a24] border border-[#2a2a3a] text-gray-300 hover:text-white rounded transition-colors text-xs"
+              >
+                Dismiss
+              </button>
+            </div>
+
+            <div className="grid grid-cols-1 lg:grid-cols-[1fr_auto] gap-4 items-start">
+              <div className="space-y-3">
+                <div>
+                  <p className="text-xs uppercase tracking-widest text-gray-500 mb-1">Storage Mode</p>
+                  <p className="text-white font-medium">
+                    {latestCreatedAgent.apiKeyStorageMode === 'stored'
+                      ? 'Stored encrypted'
+                      : 'One-time only'}
+                  </p>
+                </div>
+                <div>
+                  <p className="text-xs uppercase tracking-widest text-gray-500 mb-1">Agent Name</p>
+                  <p className="text-white font-medium">{latestCreatedAgent.name}</p>
+                </div>
+                <div>
+                  <p className="text-xs uppercase tracking-widest text-gray-500 mb-1">Agent ID</p>
+                  <code className="block bg-[#1a1a24] border border-[#2a2a3a] px-3 py-2 text-sm text-gray-200 font-mono rounded break-all">
+                    {latestCreatedAgent.agentId}
+                  </code>
+                </div>
+                <div>
+                  <div className="flex items-center justify-between gap-3 mb-1">
+                    <p className="text-xs uppercase tracking-widest text-gray-500">API Key</p>
+                    <button
+                      onClick={() => setShowLatestApiKey((current) => !current)}
+                      className="inline-flex items-center gap-1 text-xs text-gray-400 hover:text-white transition-colors"
+                    >
+                      {showLatestApiKey ? <EyeOff className="size-3.5" /> : <Eye className="size-3.5" />}
+                      {showLatestApiKey ? 'Hide' : 'Show'}
+                    </button>
+                  </div>
+                  <code className="block bg-[#1a1a24] border border-[#2a2a3a] px-3 py-2 text-sm text-[#c4b5fd] font-mono rounded break-all">
+                    {showLatestApiKey
+                      ? latestCreatedAgent.apiKey
+                      : maskApiKey(latestCreatedAgent.apiKey)}
+                  </code>
+                </div>
+              </div>
+
+              <div className="flex flex-col gap-2">
                 <button
-                  className="p-2 text-gray-400 hover:text-[#ef4444] hover:bg-[#ef4444]/10 rounded transition-colors"
-                  title="Revoke Key"
+                  onClick={() => void copyText(latestCreatedAgent.apiKey, 'latest-api-key')}
+                  className="flex items-center gap-2 px-4 py-2 bg-[#4f46e5] hover:bg-[#6366f1] text-white rounded transition-colors text-sm font-medium"
                 >
-                  <Trash2 className="size-4" />
+                  <Copy className="size-4" />
+                  {copyFeedback === 'latest-api-key' ? 'Copied API Key' : 'Copy API Key'}
+                </button>
+                <button
+                  onClick={() => void copyText(latestCreatedAgent.agentId, 'latest-agent-id')}
+                  className="flex items-center gap-2 px-4 py-2 bg-[#1a1a24] hover:bg-[#2a2a3a] border border-[#2a2a3a] text-white rounded transition-colors text-sm font-medium"
+                >
+                  <Copy className="size-4" />
+                  {copyFeedback === 'latest-agent-id' ? 'Copied Agent ID' : 'Copy Agent ID'}
                 </button>
               </div>
-              <div className="flex items-center gap-2">
-                <span className="text-xs text-gray-400">Permissions:</span>
-                {apiKey.permissions.map((perm) => (
-                  <span
-                    key={perm}
-                    className="text-xs px-2 py-1 bg-[#1a1a24] text-gray-300 border border-[#2a2a3a] rounded"
-                  >
-                    {perm}
-                  </span>
-                ))}
-              </div>
             </div>
-          ))}
-        </div>
+          </div>
+        ) : null}
 
-        {/* Generate New API Key Form */}
-        {showNewAPIKeyForm && (
+        {showNewAgentForm ? (
           <div className="bg-[#0a0a0f] border border-[#4f46e5]/30 rounded-lg p-6 space-y-4">
-            <h3 className="text-white font-medium mb-4">Generate New API Key</h3>
+            <h3 className="text-white font-medium">Create New Agent</h3>
             <div className="space-y-4">
               <div>
-                <label className="text-sm text-gray-400 mb-2 block">Key Name</label>
+                <label className="text-sm text-gray-400 mb-2 block">Agent Name</label>
                 <input
                   type="text"
-                  placeholder="e.g., Staging Environment"
+                  value={newAgentName}
+                  onChange={(event) => setNewAgentName(event.target.value)}
+                  placeholder="e.g., Web Server, Office PC, VPN Gateway"
                   className="w-full bg-[#1a1a24] border border-[#2a2a3a] px-4 py-2.5 text-sm text-white placeholder:text-gray-500 focus:outline-none focus:border-[#4f46e5] transition-colors rounded"
                 />
               </div>
+
               <div>
-                <label className="text-sm text-gray-400 mb-2 block">Permissions</label>
-                <div className="space-y-2">
-                  <label className="flex items-center gap-2 text-sm text-gray-300 cursor-pointer">
-                    <input type="checkbox" className="rounded border-[#2a2a3a]" defaultChecked />
-                    <span>log:write - Write log data</span>
-                  </label>
-                  <label className="flex items-center gap-2 text-sm text-gray-300 cursor-pointer">
-                    <input type="checkbox" className="rounded border-[#2a2a3a]" defaultChecked />
-                    <span>log:read - Read log data</span>
-                  </label>
-                  <label className="flex items-center gap-2 text-sm text-gray-300 cursor-pointer">
-                    <input type="checkbox" className="rounded border-[#2a2a3a]" />
-                    <span>alert:read - Read alerts</span>
-                  </label>
-                  <label className="flex items-center gap-2 text-sm text-gray-300 cursor-pointer">
-                    <input type="checkbox" className="rounded border-[#2a2a3a]" />
-                    <span>dashboard:read - Access dashboards</span>
-                  </label>
+                <p className="text-sm text-gray-400 mb-3">API Key Handling</p>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                  {STORAGE_OPTIONS.map((option) => {
+                    const isSelected = newAgentStorageMode === option.value;
+                    return (
+                      <button
+                        key={option.value}
+                        type="button"
+                        onClick={() => setNewAgentStorageMode(option.value)}
+                        className={`text-left rounded-lg border px-4 py-4 transition-colors ${
+                          isSelected
+                            ? 'border-[#4f46e5] bg-[#4f46e5]/10'
+                            : 'border-[#2a2a3a] bg-[#12121a] hover:border-[#3a3a4a]'
+                        }`}
+                      >
+                        <div className="text-white font-medium mb-1">{option.label}</div>
+                        <div className="text-sm text-gray-400">{option.description}</div>
+                      </button>
+                    );
+                  })}
                 </div>
               </div>
+
+              <div
+                className={`rounded-lg border px-4 py-3 text-sm ${
+                  newAgentStorageMode === 'stored'
+                    ? 'border-[#f59e0b]/30 bg-[#f59e0b]/10 text-[#fde68a]'
+                    : 'border-[#10b981]/30 bg-[#10b981]/10 text-[#bbf7d0]'
+                }`}
+              >
+                {newAgentStorageMode === 'stored'
+                  ? 'Warning: choosing stored mode means the server will keep an encrypted copy of the raw API key so you can reveal it later. This is convenient, but less strict than one-time-only handling.'
+                  : 'One-time mode means the raw API key is not kept anywhere recoverable. If you lose it, you must regenerate a new one.'}
+              </div>
             </div>
+
             <div className="flex items-center gap-3 pt-2">
-              <button className="px-4 py-2 bg-[#4f46e5] hover:bg-[#6366f1] text-white rounded transition-colors text-sm font-medium">
-                Generate Key
+              <button
+                onClick={() => void handleCreateAgent()}
+                disabled={isCreatingAgent || newAgentName.trim().length === 0}
+                className="px-4 py-2 bg-[#4f46e5] hover:bg-[#6366f1] text-white rounded transition-colors text-sm font-medium disabled:opacity-60"
+              >
+                {isCreatingAgent ? 'Creating Agent...' : 'Create Agent'}
               </button>
               <button
-                onClick={() => setShowNewAPIKeyForm(false)}
+                onClick={() => {
+                  setShowNewAgentForm(false);
+                  setNewAgentName('');
+                  setNewAgentStorageMode('one_time');
+                }}
                 className="px-4 py-2 bg-[#1a1a24] border border-[#2a2a3a] text-gray-300 hover:text-white rounded transition-colors text-sm"
               >
                 Cancel
               </button>
             </div>
           </div>
-        )}
-      </div>
+        ) : null}
 
-      {/* System Configuration */}
-      <div className="bg-[#0f0f17] border border-[#1f1f2e] rounded-lg p-6 space-y-6">
-        <div>
-          <h2 className="text-xl text-white mb-2 flex items-center gap-2">
-            <Database className="size-5 text-[#4f46e5]" />
-            System Configuration
-          </h2>
-          <p className="text-sm text-gray-400">
-            Configure data retention policies and backend service parameters
-          </p>
-        </div>
-
-        {/* Data Retention Policy */}
-        <div className="bg-[#0a0a0f] border border-[#1f1f2e] rounded-lg p-5 space-y-4">
-          <div className="flex items-center gap-2 mb-3">
-            <Clock className="size-5 text-[#4f46e5]" />
-            <h3 className="text-white font-medium">Data Retention Policy</h3>
-          </div>
-          
-          <div>
-            <label className="text-sm text-gray-400 mb-2 block">Log Retention Period (Days)</label>
-            <div className="flex items-center gap-4">
-              <input
-                type="number"
-                value={retentionDays}
-                onChange={(e) => setRetentionDays(parseInt(e.target.value))}
-                min="30"
-                max="365"
-                className="w-32 bg-[#1a1a24] border border-[#2a2a3a] px-4 py-2.5 text-sm text-white focus:outline-none focus:border-[#4f46e5] transition-colors rounded"
-              />
-              <span className="text-sm text-gray-400">
-                Logs older than {retentionDays} days will be automatically archived
-              </span>
+        <div className="space-y-3">
+          {isLoadingAgents ? (
+            Array.from({ length: 3 }).map((_, index) => (
+              <div key={index} className="bg-[#0a0a0f] border border-[#1f1f2e] rounded-lg p-4 animate-pulse">
+                <div className="h-4 bg-[#1a1a24] rounded w-1/3 mb-3" />
+                <div className="h-10 bg-[#1a1a24] rounded w-full mb-3" />
+                <div className="h-3 bg-[#1a1a24] rounded w-1/2" />
+              </div>
+            ))
+          ) : agents.length === 0 ? (
+            <div className="bg-[#0a0a0f] border border-dashed border-[#2a2a3a] rounded-lg p-8 text-center">
+              <Key className="size-8 text-gray-500 mx-auto mb-3" />
+              <h3 className="text-white font-medium mb-2">No agents registered</h3>
+              <p className="text-sm text-gray-400 mb-4">
+                Create your first agent to connect a machine or service to SIEM log ingestion.
+              </p>
+              <button
+                onClick={() => setShowNewAgentForm(true)}
+                className="inline-flex items-center gap-2 px-4 py-2 bg-[#4f46e5] hover:bg-[#6366f1] text-white rounded transition-colors text-sm font-medium"
+              >
+                <Plus className="size-4" />
+                Create First Agent
+              </button>
             </div>
-          </div>
+          ) : (
+            agents.map((agent) => {
+              const revealedKey = revealedKeys[agent.agentId];
+              const isRegenerateOpen = regenerateAgentId === agent.agentId;
+              const isStored = agent.apiKeyStorageMode === 'stored';
 
-          <div className="flex items-center justify-between p-4 bg-[#1a1a24] border border-[#2a2a3a] rounded">
-            <div>
-              <p className="text-sm text-white font-medium mb-1">Enable Automatic Archiving</p>
-              <p className="text-xs text-gray-400">Archive old logs to cold storage</p>
-            </div>
-            <label className="relative inline-flex items-center cursor-pointer">
-              <input
-                type="checkbox"
-                checked={archiveEnabled}
-                onChange={(e) => setArchiveEnabled(e.target.checked)}
-                className="sr-only peer"
-              />
-              <div className="w-11 h-6 bg-[#1a1a24] border border-[#2a2a3a] peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-gray-400 after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-[#4f46e5] peer-checked:after:bg-white"></div>
-            </label>
-          </div>
+              return (
+                <div
+                  key={agent.agentId}
+                  className="bg-[#0a0a0f] border border-[#1f1f2e] rounded-lg p-4 hover:border-[#2a2a3a] transition-colors"
+                >
+                  <div className="flex items-start justify-between gap-4">
+                    <div className="flex-1 min-w-0 space-y-3">
+                      <div className="flex flex-wrap items-center gap-3">
+                        <h3 className="text-white font-medium">{agent.name}</h3>
+                        <span
+                          className={`inline-flex items-center gap-1.5 text-xs px-2.5 py-1 border rounded ${
+                            isStored
+                              ? 'text-[#f59e0b] bg-[#f59e0b]/10 border-[#f59e0b]/30'
+                              : 'text-[#10b981] bg-[#10b981]/10 border-[#10b981]/30'
+                          }`}
+                        >
+                          <Shield className="size-3.5" />
+                          {isStored ? 'Stored encrypted' : 'One-time only'}
+                        </span>
+                      </div>
 
-          <div className="flex items-center justify-between p-4 bg-[#1a1a24] border border-[#2a2a3a] rounded">
-            <div>
-              <p className="text-sm text-white font-medium mb-1">Enable Log Compression</p>
-              <p className="text-xs text-gray-400">Compress logs to reduce storage usage</p>
-            </div>
-            <label className="relative inline-flex items-center cursor-pointer">
-              <input
-                type="checkbox"
-                checked={compressionEnabled}
-                onChange={(e) => setCompressionEnabled(e.target.checked)}
-                className="sr-only peer"
-              />
-              <div className="w-11 h-6 bg-[#1a1a24] border border-[#2a2a3a] peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-gray-400 after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-[#4f46e5] peer-checked:after:bg-white"></div>
-            </label>
-          </div>
-        </div>
+                      <div>
+                        <p className="text-xs uppercase tracking-widest text-gray-500 mb-1">Agent ID</p>
+                        <code className="block bg-[#1a1a24] border border-[#2a2a3a] px-3 py-2 text-sm text-gray-200 font-mono rounded break-all">
+                          {agent.agentId}
+                        </code>
+                      </div>
 
-        {/* Alert Configuration */}
-        <div className="bg-[#0a0a0f] border border-[#1f1f2e] rounded-lg p-5 space-y-4">
-          <div className="flex items-center gap-2 mb-3">
-            <AlertTriangle className="size-5 text-[#f59e0b]" />
-            <h3 className="text-white font-medium">Alert Configuration</h3>
-          </div>
+                      <div>
+                        <div className="flex items-center justify-between gap-3 mb-1">
+                          <p className="text-xs uppercase tracking-widest text-gray-500">API Key</p>
+                          {isStored ? (
+                            <button
+                              onClick={() => void handleToggleReveal(agent)}
+                              disabled={revealingAgentId === agent.agentId}
+                              className="inline-flex items-center gap-1 text-xs text-gray-400 hover:text-white transition-colors disabled:opacity-60"
+                            >
+                              {revealedKey ? <EyeOff className="size-3.5" /> : <Eye className="size-3.5" />}
+                              {revealingAgentId === agent.agentId
+                                ? 'Loading...'
+                                : revealedKey
+                                  ? 'Hide'
+                                  : 'Unhide'}
+                            </button>
+                          ) : null}
+                        </div>
+                        <code className="block bg-[#1a1a24] border border-[#2a2a3a] px-3 py-2 text-sm text-[#c4b5fd] font-mono rounded break-all">
+                          {revealedKey ?? agent.apiKeyPreview}
+                        </code>
+                      </div>
 
-          <div>
-            <label className="text-sm text-gray-400 mb-2 block">Alert Retention Period (Days)</label>
-            <input
-              type="number"
-              defaultValue={180}
-              min="30"
-              max="730"
-              className="w-32 bg-[#1a1a24] border border-[#2a2a3a] px-4 py-2.5 text-sm text-white focus:outline-none focus:border-[#4f46e5] transition-colors rounded"
-            />
-          </div>
+                      <div className="flex flex-wrap items-center gap-3 text-xs text-gray-400">
+                        <span>
+                          Created: {agent.createdAt ? new Date(agent.createdAt).toLocaleString() : 'Unknown'}
+                        </span>
+                        <span>
+                          Updated: {agent.updatedAt ? new Date(agent.updatedAt).toLocaleString() : 'Unknown'}
+                        </span>
+                      </div>
 
-          <div>
-            <label className="text-sm text-gray-400 mb-2 block">Maximum Alerts Per Day</label>
-            <input
-              type="number"
-              defaultValue={10000}
-              min="100"
-              max="100000"
-              step="100"
-              className="w-32 bg-[#1a1a24] border border-[#2a2a3a] px-4 py-2.5 text-sm text-white focus:outline-none focus:border-[#4f46e5] transition-colors rounded"
-            />
-          </div>
-        </div>
+                      <div
+                        className={`rounded-lg border px-3 py-2 text-sm ${
+                          isStored
+                            ? 'border-[#f59e0b]/20 bg-[#f59e0b]/5 text-[#fde68a]'
+                            : 'border-[#10b981]/20 bg-[#10b981]/5 text-[#bbf7d0]'
+                        }`}
+                      >
+                        {isStored
+                          ? 'This key is recoverable because the server keeps an encrypted copy.'
+                          : 'This agent is configured for one-time-only secrets. Use regenerate if you need a new visible key.'}
+                      </div>
+                    </div>
 
-        {/* Save Button */}
-        <div className="flex items-center gap-3 pt-2">
-          <button className="flex items-center gap-2 px-6 py-2.5 bg-[#4f46e5] hover:bg-[#6366f1] text-white rounded transition-colors font-medium">
-            <Save className="size-4" />
-            Save Configuration
-          </button>
-          <div className="flex items-center gap-2 text-sm text-gray-400">
-            <CheckCircle2 className="size-4 text-[#10b981]" />
-            <span>All changes saved automatically</span>
-          </div>
+                    <div className="flex flex-col gap-2">
+                      <button
+                        onClick={() => void copyText(agent.agentId, `agent-id-${agent.agentId}`)}
+                        className="flex items-center gap-2 px-3 py-2 bg-[#1a1a24] hover:bg-[#2a2a3a] border border-[#2a2a3a] text-white rounded transition-colors text-sm"
+                      >
+                        <Copy className="size-4" />
+                        {copyFeedback === `agent-id-${agent.agentId}` ? 'Copied ID' : 'Copy ID'}
+                      </button>
+
+                      {revealedKey ? (
+                        <button
+                          onClick={() => void copyText(revealedKey, `agent-key-${agent.agentId}`)}
+                          className="flex items-center gap-2 px-3 py-2 bg-[#1a1a24] hover:bg-[#2a2a3a] border border-[#2a2a3a] text-white rounded transition-colors text-sm"
+                        >
+                          <Copy className="size-4" />
+                          {copyFeedback === `agent-key-${agent.agentId}` ? 'Copied Key' : 'Copy Key'}
+                        </button>
+                      ) : null}
+
+                      <button
+                        onClick={() => openRegeneratePanel(agent)}
+                        className="flex items-center gap-2 px-3 py-2 bg-[#4f46e5] hover:bg-[#6366f1] text-white rounded transition-colors text-sm"
+                      >
+                        <RotateCw className="size-4" />
+                        Regenerate
+                      </button>
+                    </div>
+                  </div>
+
+                  {isRegenerateOpen ? (
+                    <div className="mt-4 rounded-lg border border-[#4f46e5]/30 bg-[#11111a] p-4 space-y-4">
+                      <div className="flex items-center justify-between gap-3">
+                        <h4 className="text-white font-medium">Regenerate API Key</h4>
+                        <button
+                          onClick={() => setRegenerateAgentId(null)}
+                          className="text-xs text-gray-400 hover:text-white transition-colors"
+                        >
+                          Cancel
+                        </button>
+                      </div>
+
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                        {STORAGE_OPTIONS.map((option) => {
+                          const isSelected = regenerateStorageMode === option.value;
+                          return (
+                            <button
+                              key={option.value}
+                              type="button"
+                              onClick={() => setRegenerateStorageMode(option.value)}
+                              className={`text-left rounded-lg border px-4 py-4 transition-colors ${
+                                isSelected
+                                  ? 'border-[#4f46e5] bg-[#4f46e5]/10'
+                                  : 'border-[#2a2a3a] bg-[#12121a] hover:border-[#3a3a4a]'
+                              }`}
+                            >
+                              <div className="text-white font-medium mb-1">{option.label}</div>
+                              <div className="text-sm text-gray-400">{option.description}</div>
+                            </button>
+                          );
+                        })}
+                      </div>
+
+                      <div
+                        className={`rounded-lg border px-4 py-3 text-sm ${
+                          regenerateStorageMode === 'stored'
+                            ? 'border-[#f59e0b]/30 bg-[#f59e0b]/10 text-[#fde68a]'
+                            : 'border-[#10b981]/30 bg-[#10b981]/10 text-[#bbf7d0]'
+                        }`}
+                      >
+                        {regenerateStorageMode === 'stored'
+                          ? 'Regenerating in stored mode replaces the current secret and keeps a new encrypted copy in the database.'
+                          : 'Regenerating in one-time mode invalidates the old secret and removes the recoverable stored copy.'}
+                      </div>
+
+                      <button
+                        onClick={() => void handleRegenerate(agent)}
+                        disabled={regeneratingAgentId === agent.agentId}
+                        className="px-4 py-2 bg-[#4f46e5] hover:bg-[#6366f1] text-white rounded transition-colors text-sm font-medium disabled:opacity-60"
+                      >
+                        {regeneratingAgentId === agent.agentId ? 'Regenerating...' : 'Confirm Regenerate'}
+                      </button>
+                    </div>
+                  ) : null}
+                </div>
+              );
+            })
+          )}
         </div>
       </div>
     </div>

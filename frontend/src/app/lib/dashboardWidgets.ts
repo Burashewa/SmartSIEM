@@ -125,8 +125,9 @@ export function buildRecentAlerts(alerts: BackendAlertRecord[]): RecentAlertReco
     .map((alert, index) => {
       const context = asRecord(alert.context);
       const normalizedRuleId =
-        readString(alert.rule_id) ?? readString(alert.alert_id) ?? `alert-${index}`;
-      const ruleName = readString(alert.rule_name) ?? 'Unknown rule';
+        readString(alert.rule_id) ?? readString(alert.ruleId) ?? readString(alert.alert_id) ?? `alert-${index}`;
+      const ruleName =
+        readString(alert.rule_name) ?? humanizeRuleId(normalizedRuleId);
 
       // Build a more descriptive alert message
       const alertDetails: string[] = [];

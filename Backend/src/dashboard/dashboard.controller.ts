@@ -1,12 +1,19 @@
-import { Controller, Get } from '@nestjs/common';
+import { Controller, Get, Req } from '@nestjs/common';
 import { DashboardService } from './dashboard.service';
+import { Roles } from '../auth/decorators/roles.decorator';
+import { AuthJwtPayload } from '../auth/auth.types';
+
+type AuthenticatedRequest = {
+  user?: AuthJwtPayload;
+};
 
 @Controller('dashboard')
 export class DashboardController {
   constructor(private readonly dashboardService: DashboardService) {}
 
   @Get('summary')
-  async getSummary() {
-    return this.dashboardService.getSummary();
+  @Roles('security_analyst')
+  async getSummary(@Req() request: AuthenticatedRequest) {
+    return this.dashboardService.getSummary(request.user!);
   }
 }

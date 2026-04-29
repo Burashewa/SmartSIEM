@@ -1,8 +1,9 @@
 import { Injectable } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
-import { Model } from 'mongoose';
+import { Model, Types } from 'mongoose';
 import { Alert } from '../alerts/alert.schema';
 import { Log } from '../logs/log.schema';
+import { AuthJwtPayload } from '../auth/auth.types';
 
 type TrendTone = 'positive' | 'negative' | 'neutral';
 
@@ -36,12 +37,14 @@ export class DashboardService {
     @InjectModel(Alert.name) private readonly alertModel: Model<Alert>,
   ) {}
 
-  async getSummary() {
+  async getSummary(user: AuthJwtPayload) {
     const now = new Date();
     const todayStart = startOfDay(now);
     const yesterdayStart = addDays(todayStart, -1);
     const lastHourStart = new Date(now.getTime() - 60 * 60 * 1000);
     const lastDayStart = new Date(now.getTime() - 24 * 60 * 60 * 1000);
+    const logFilter = this.buildOwnershipFilter(user);
+    const alertFilter = this.buildOwnershipFilter(user);
 
     const [
       logsToday,
@@ -55,27 +58,37 @@ export class DashboardService {
       alertsBySeverity,
       eventsBySource,
     ] = await Promise.all([
-      this.logModel.countDocuments({ timestamp: { $gte: todayStart, $lte: now } }),
       this.logModel.countDocuments({
+        ...logFilter,
+        timestamp: { $gte: todayStart, $lte: now },
+      }),
+      this.logModel.countDocuments({
+        ...logFilter,
         timestamp: { $gte: yesterdayStart, $lt: todayStart },
       }),
-      this.alertModel.countDocuments({ status: { $ne: 'resolved' } }),
-      this.alertModel.countDocuments({ triggeredAt: { $gte: todayStart, $lte: now } }),
+      this.alertModel.countDocuments({ ...alertFilter, status: { $ne: 'resolved' } }),
       this.alertModel.countDocuments({
+        ...alertFilter,
+        triggeredAt: { $gte: todayStart, $lte: now },
+      }),
+      this.alertModel.countDocuments({
+        ...alertFilter,
         severity: 'critical',
         status: { $ne: 'resolved' },
       }),
       this.alertModel.countDocuments({
+        ...alertFilter,
         severity: 'critical',
         triggeredAt: { $gte: todayStart, $lte: now },
       }),
       this.logModel.countDocuments({
+        ...logFilter,
         severity: { $in: ['high', 'critical'] },
         timestamp: { $gte: lastHourStart, $lte: now },
       }),
-      this.buildLogActivity(now),
-      this.buildAlertsBySeverity(),
-      this.buildEventsBySource(lastDayStart, now),
+      this.buildLogActivity(now, logFilter),
+      this.buildAlertsBySeverity(alertFilter),
+      this.buildEventsBySource(lastDayStart, now, logFilter),
     ]);
 
     const systemHealth = this.computeSystemHealth({
@@ -145,7 +158,10 @@ export class DashboardService {
     return { value, trend, trendLabel, trendTone };
   }
 
-  private async buildLogActivity(now: Date): Promise<LogActivityPoint[]> {
+  private async buildLogActivity(
+    now: Date,
+    filter: Record<string, unknown>,
+  ): Promise<LogActivityPoint[]> {
     const bucketCount = 6;
     const bucketMs = 4 * 60 * 60 * 1000;
     const windowStart = new Date(now.getTime() - bucketCount * bucketMs);
@@ -160,6 +176,7 @@ export class DashboardService {
 
         return this.logModel
           .countDocuments({
+            ...filter,
             timestamp: {
               $gte: bucketStart,
               $lt: bucketEnd,
@@ -175,8 +192,11 @@ export class DashboardService {
     return counts;
   }
 
-  private async buildAlertsBySeverity(): Promise<AlertSeverityPoint[]> {
+  private async buildAlertsBySeverity(
+    filter: Record<string, unknown>,
+  ): Promise<AlertSeverityPoint[]> {
     const counts = await this.alertModel.aggregate<{ _id: string; value: number }>([
+      { $match: filter },
       {
         $group: {
           _id: {
@@ -203,10 +223,12 @@ export class DashboardService {
   private async buildEventsBySource(
     start: Date,
     end: Date,
+    filter: Record<string, unknown>,
   ): Promise<EventsBySourcePoint[]> {
     const rows = await this.logModel.aggregate<{ source: string; events: number }>([
       {
         $match: {
+          ...filter,
           timestamp: { $gte: start, $lte: end },
           source: { $exists: true, $nin: [null, ''] },
         },
@@ -229,6 +251,14 @@ export class DashboardService {
     ]);
 
     return rows;
+  }
+
+  private buildOwnershipFilter(user: AuthJwtPayload): Record<string, unknown> {
+    if (user.role === 'admin') {
+      return {};
+    }
+
+    return { userId: new Types.ObjectId(user.sub) };
   }
 
   private computeSystemHealth(input: {

@@ -31,7 +31,8 @@ const humanizeRule = (ruleId: string | undefined): string => {
 };
 
 const normalizeAlert = (alert: BackendAlertRecord): AlertItem => {
-  const ruleId = readString(alert.rule_id) ?? readString(alert.alert_id) ?? 'unknown-rule';
+  const ruleId =
+    readString(alert.rule_id) ?? readString(alert.ruleId) ?? readString(alert.alert_id) ?? 'unknown-rule';
   const ruleName = readString(alert.rule_name) ?? humanizeRule(ruleId);
   const context = typeof alert.context === 'object' && alert.context ? (alert.context as Record<string, unknown>) : {};
 
