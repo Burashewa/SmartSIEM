@@ -7,9 +7,10 @@ import signal
 import sys
 
 from config.settings import Settings
+from enrichment import EnrichmentManager
 from listeners.http_api import HttpApiServer
 from listeners.syslog_server import SyslogServer
-from normalizers.schema import normalize
+from normalizers import normalize
 from outputs.queue_writer import QueueWriter
 from parsers.base_parser import BaseParser
 
@@ -29,9 +30,10 @@ def main() -> None:
 
     parser = BaseParser()
     queue_writer = QueueWriter(settings=settings)
+    enrichment = EnrichmentManager(settings=settings)
 
     async def on_message(raw: str, source: str) -> None:
-        """Pipeline: parse -> normalize -> queue."""
+        """Pipeline: parse -> normalize -> enrich -> queue."""
         try:
             result = parser.parse(raw, source=source)
             if result.log_type == "empty":
@@ -42,7 +44,9 @@ def main() -> None:
                 raw=result.raw,
                 source=source,
             )
-            await queue_writer.put(normalized.to_json_dict())
+            payload = normalized.to_json_dict()
+            enriched = await enrichment.enrich(payload)
+            await queue_writer.put(enriched)
         except Exception as exc:
             logger.warning("Pipeline error for log from %s: %s", source, exc)
 
@@ -79,6 +83,7 @@ def main() -> None:
             logger.info("Shutting down...")
             await http_api.stop()
             syslog.stop()
+            enrichment.close()
             try:
                 await asyncio.shield(queue_writer.stop())
             except asyncio.CancelledError:

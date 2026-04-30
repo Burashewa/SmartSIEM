@@ -3,6 +3,7 @@
 import asyncio
 import json
 import logging
+from datetime import datetime
 from pathlib import Path
 from typing import Any
 
@@ -148,14 +149,34 @@ class QueueWriter:
         def _do_batch() -> None:
             from database import _prepare_for_mongo
             from pymongo import MongoClient
+            from validators import SIEMValidator
 
             client = MongoClient(self._settings.mongo_uri)
+            validator = SIEMValidator()
             try:
-                coll = client["SIEM"]["logs"]
+                db = client["SIEM"]
+                coll = db["logs"]
+                dead_letter = db["dead_letter"]
                 for item in batch:
                     try:
-                        doc = _prepare_for_mongo(item)
-                        coll.insert_one(doc)
+                        is_valid, cleaned, errors = validator.validate_and_clean(item)
+                        if is_valid:
+                            doc = _prepare_for_mongo(cleaned)
+                            coll.insert_one(doc)
+                        else:
+                            tags = cleaned.get("tags")
+                            if not isinstance(tags, list):
+                                tags = []
+                            if "validation_failed" not in tags:
+                                tags.append("validation_failed")
+                            cleaned["tags"] = tags
+                            dead_letter.insert_one(
+                                {
+                                    "failed_at": datetime.utcnow(),
+                                    "validation_errors": errors,
+                                    "event": cleaned,
+                                }
+                            )
                     except Exception as exc:
                         logger.error("MongoDB insert failed: %s", exc)
                 logger.debug("Inserted %d logs into MongoDB", len(batch))

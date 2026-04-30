@@ -20,7 +20,7 @@ class ParseResult:
     fields: dict[str, str | dict[str, object] | list[object]]
     raw: str
 
-    def to_dict(self) -> dict[str, str | dict[str, str]]:
+    def to_dict(self) -> dict[str, str | dict[str, object] | list[object]]:
         """Convert to dict for downstream normalization."""
         return {"log_type": self.log_type, "fields": self.fields, "raw": self.raw}
 
@@ -99,6 +99,8 @@ class BaseParser:
                 json_fields[k] = str(v)
 
         message = self._find_internal_message_text(data)
+        if not message:
+            message = self._synthesize_syslog_line_from_nxlog(data)
         if message:
             # Run regex on internal text; merge extracted fields after
             # initial JSON field extraction.
@@ -130,8 +132,152 @@ class BaseParser:
                 nested = self._find_internal_message_text(value)
                 if nested:
                     return nested
+            if isinstance(value, list):
+                nested = self._find_internal_message_in_list(value)
+                if nested:
+                    return nested
 
         return None
+
+    def _find_internal_message_in_list(self, values: list[object]) -> str | None:
+        """Search nested arrays for message-like content."""
+        for item in values:
+            if isinstance(item, str) and item.strip():
+                return item.strip()
+            if isinstance(item, dict):
+                nested = self._find_internal_message_text(item)
+                if nested:
+                    return nested
+            if isinstance(item, list):
+                nested = self._find_internal_message_in_list(item)
+                if nested:
+                    return nested
+        return None
+
+    def _synthesize_syslog_line_from_nxlog(self, data: dict[str, object]) -> str | None:
+        """
+        NXLog xm_json via om_http may emit metadata dicts without a canonical message field.
+
+        When timestamps and hostname look like syslog and a body field exists, rebuild
+        a single line so kali_syslog + message parsers can extract fields.
+        """
+        time_raw = (
+            data.get("EventReceivedTime") or data.get("timestamp") or data.get("@timestamp")
+        )
+        host_raw = data.get("Hostname") or data.get("hostname") or data.get("MachineName")
+
+        if not isinstance(time_raw, str) or not time_raw.strip():
+            return None
+        hn = ""
+        if isinstance(host_raw, str) and host_raw.strip():
+            hn = host_raw.strip()
+        elif isinstance(host_raw, (int, float)):
+            hn = str(host_raw)
+        elif host_raw:
+            hn = str(host_raw).strip()
+
+        if not hn:
+            return None
+
+        candidate_keys = (
+            "RawMessage",
+            "raw_message",
+            "full_message",
+            "Message",
+            "message",
+            "msg",
+            "Line",
+            "line",
+            "payload",
+            "text",
+            "SYSLOGMESSAGE",
+            "syslog_msg",
+            "BODY",
+            "body",
+            "MESSAGE",
+            "NXLogMessage",
+            "NxlogMessage",
+        )
+        msg_text: str | None = None
+        for ck in candidate_keys:
+            raw = data.get(ck)
+            if isinstance(raw, str) and raw.strip():
+                msg_text = raw.strip()
+                break
+
+        prog = ""
+        if msg_text:
+            for pk in (
+                "SourceModuleName",
+                "ProgramName",
+                "Program",
+                "process_name",
+                "process",
+                "daemon",
+                "syslog_progname",
+            ):
+                pr = data.get(pk)
+                if isinstance(pr, str) and pr.strip():
+                    prog = pr.strip().replace(":", "")
+                    break
+            if not prog:
+                prog = "*"
+            line = f"{time_raw.strip()} {hn} {prog}: {msg_text}"
+            return line
+
+        # Metadata-only payloads (often when RawMessage omitted)
+        if self._looks_like_meta_only_nxlog(data):
+            fac = ""
+            sev = ""
+            fac_v = data.get("syslog_facility_code") or data.get("Facility")
+            if isinstance(fac_v, (int, str)) and str(fac_v).strip():
+                fac = str(fac_v).strip()
+            sev_v = data.get("syslog_severity_code") or data.get("SeverityValue")
+            if isinstance(sev_v, (int, str)) and str(sev_v).strip():
+                sev = str(sev_v).strip()
+
+            mods = ",".join(
+                f"{k}={data[k]}"
+                for k in sorted(data.keys())
+                if any(x in str(k).lower() for x in ("sourcemodule", "hostname", "received", "nxlog"))
+            )
+            return (
+                f"{time_raw.strip()} {hn} nxlog_meta: syslog_facility={fac}; syslog_severity={sev}; {mods}"
+            )
+
+        return None
+
+    def _looks_like_meta_only_nxlog(self, data: dict[str, object]) -> bool:
+        if len(data) < 2:
+            return False
+        has_host = any(
+            isinstance(data.get(k), str) and str(data.get(k)).strip()
+            for k in ("Hostname", "hostname")
+        )
+        has_time = any(
+            isinstance(data.get(k), str) and str(data.get(k)).strip()
+            for k in ("EventReceivedTime", "timestamp", "@timestamp")
+        )
+        if not has_host or not has_time:
+            return False
+
+        body_keys_present = False
+        for k in (
+            "RawMessage",
+            "Message",
+            "message",
+            "msg",
+            "NXLogMessage",
+            "NxlogMessage",
+            "NXLOG_MESSAGE",
+        ):
+            v = data.get(k)
+            if isinstance(v, str) and v.strip():
+                body_keys_present = True
+                break
+
+        meta_signal = ("SourceModuleName" in data) or ("SourceModuleType" in data)
+        return meta_signal and not body_keys_present
 
     def _parse_text(self, text: str, source: str) -> ParseResult:
         """Apply line rules, then message rules on syslog message if matched."""

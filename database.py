@@ -1,4 +1,4 @@
-"""MongoDB storage with Geo-IP enrichment for SIEM logs."""
+"""MongoDB storage with Geo-IP enrichment for normalized logs."""
 
 import asyncio
 import ipaddress
@@ -28,12 +28,24 @@ _geo_cache: dict[str, tuple[float, dict[str, Any]]] = {}
 _geo_rate_limited_until = 0.0
 
 
+def _ensure_source_geo(log_data: dict[str, Any]) -> dict[str, Any]:
+    """Ensure source.geo map exists for nested ECS/OCSF event structure."""
+    source = log_data.get("source")
+    if not isinstance(source, dict):
+        source = {}
+        log_data["source"] = source
+    geo = source.get("geo")
+    if not isinstance(geo, dict):
+        geo = {}
+        source["geo"] = geo
+    return geo
+
+
 def _apply_unknown_geo(log_data: dict[str, Any]) -> dict[str, Any]:
     """Apply default geo fields when lookup is skipped or fails."""
-    log_data["city"] = "Unknown"
-    log_data["country_name"] = "Unknown"
-    log_data["latitude"] = log_data.get("latitude") or 0.0
-    log_data["longitude"] = log_data.get("longitude") or 0.0
+    geo = _ensure_source_geo(log_data)
+    geo["country_name"] = geo.get("country_name") or "Unknown"
+    geo["city_name"] = geo.get("city_name") or "Unknown"
     return log_data
 
 
@@ -57,12 +69,18 @@ def enrich_log_with_geo(log_data: dict[str, Any]) -> dict[str, Any]:
     """
     Enrich log with Geo-IP data from ipapi.co.
 
-    Injects city, country_name, latitude, longitude into the log.
-    On API failure: city/country_name -> "Unknown", lat/long -> 0.0.
+    Injects source.geo.city_name and source.geo.country_name.
+    On API failure values are set to "Unknown".
     """
     global _geo_rate_limited_until
 
-    ip = log_data.get("ip")
+    ip: Any = None
+    source = log_data.get("source")
+    if isinstance(source, dict):
+        ip = source.get("ip")
+    if not ip:
+        # Backward compatibility with any legacy flat events.
+        ip = log_data.get("ip")
     if not ip or not isinstance(ip, str):
         return _apply_unknown_geo(log_data)
 
@@ -74,10 +92,9 @@ def enrich_log_with_geo(log_data: dict[str, Any]) -> dict[str, Any]:
     cached = _geo_cache.get(ip)
     if cached and cached[0] > now:
         data = cached[1]
-        log_data["city"] = data.get("city") or "Unknown"
-        log_data["country_name"] = data.get("country_name") or "Unknown"
-        log_data["latitude"] = data.get("latitude") if data.get("latitude") is not None else 0.0
-        log_data["longitude"] = data.get("longitude") if data.get("longitude") is not None else 0.0
+        geo = _ensure_source_geo(log_data)
+        geo["city_name"] = data.get("city_name") or "Unknown"
+        geo["country_name"] = data.get("country_name") or "Unknown"
         return log_data
 
     if now < _geo_rate_limited_until:
@@ -97,40 +114,31 @@ def enrich_log_with_geo(log_data: dict[str, Any]) -> dict[str, Any]:
                 cooldown,
             )
             _geo_cache[ip] = (time.time() + GEO_CACHE_TTL_FAILURE_SEC, {
-                "city": "Unknown",
+                "city_name": "Unknown",
                 "country_name": "Unknown",
-                "latitude": log_data.get("latitude") or 0.0,
-                "longitude": log_data.get("longitude") or 0.0,
             })
             return _apply_unknown_geo(log_data)
         resp.raise_for_status()
         data = resp.json()
-        log_data["city"] = data.get("city") or "Unknown"
-        log_data["country_name"] = data.get("country_name") or "Unknown"
-        log_data["latitude"] = data.get("latitude") if data.get("latitude") is not None else 0.0
-        log_data["longitude"] = data.get("longitude") if data.get("longitude") is not None else 0.0
+        geo = _ensure_source_geo(log_data)
+        geo["city_name"] = data.get("city") or "Unknown"
+        geo["country_name"] = data.get("country_name") or "Unknown"
         _geo_cache[ip] = (time.time() + GEO_CACHE_TTL_SUCCESS_SEC, {
-            "city": log_data["city"],
-            "country_name": log_data["country_name"],
-            "latitude": log_data["latitude"],
-            "longitude": log_data["longitude"],
+            "city_name": geo["city_name"],
+            "country_name": geo["country_name"],
         })
     except requests.RequestException as exc:
         logger.warning("Geo-IP lookup failed for %s: %s", ip, exc)
         _geo_cache[ip] = (time.time() + GEO_CACHE_TTL_FAILURE_SEC, {
-            "city": "Unknown",
+            "city_name": "Unknown",
             "country_name": "Unknown",
-            "latitude": log_data.get("latitude") or 0.0,
-            "longitude": log_data.get("longitude") or 0.0,
         })
         _apply_unknown_geo(log_data)
     except Exception as exc:
         logger.warning("Geo-IP parse error for %s: %s", ip, exc)
         _geo_cache[ip] = (time.time() + GEO_CACHE_TTL_FAILURE_SEC, {
-            "city": "Unknown",
+            "city_name": "Unknown",
             "country_name": "Unknown",
-            "latitude": log_data.get("latitude") or 0.0,
-            "longitude": log_data.get("longitude") or 0.0,
         })
         _apply_unknown_geo(log_data)
 
@@ -178,9 +186,18 @@ def _prepare_for_mongo(log_data: dict[str, Any]) -> dict[str, Any]:
         if isinstance(parsed, datetime):
             doc["timestamp"] = parsed
 
-    event_id = doc.get("event_id")
-    if not isinstance(event_id, str) or not event_id.strip():
-        doc["event_id"] = str(uuid.uuid4())
+    event = doc.get("event")
+    if isinstance(event, dict):
+        event_id = event.get("id")
+        if not isinstance(event_id, str) or not event_id.strip():
+            event["id"] = str(uuid.uuid4())
+        # Keep compatibility with existing Mongo unique index on top-level event_id.
+        doc["event_id"] = event["id"]
+    else:
+        # Backward compatibility for non-nested event shape.
+        event_id = doc.get("event_id")
+        if not isinstance(event_id, str) or not event_id.strip():
+            doc["event_id"] = str(uuid.uuid4())
 
     return enrich_log_with_geo(doc)
 

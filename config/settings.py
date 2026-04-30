@@ -23,10 +23,17 @@ class Settings(BaseSettings):
 
     # Queue output ("file" | "mongodb" | "null")
     queue_output: str = "file"
-    queue_output: str = "mongodb"
     queue_file_path: str = "logs.ndjson"
     queue_batch_size: int = 100
     queue_flush_interval_ms: int = 1000
 
     # MongoDB (when queue_output="mongodb"); set via MONGO_URI env var
     mongo_uri: str = "mongodb://localhost:27017"
+
+    # Enrichment (post-normalize, pre-output)
+    enrichment_enabled: bool = True
+    geoip_mmdb_path: str = ""
+    critical_assets_json_path: str = ""
+    user_directory_json_path: str = ""
+    threat_intel_enabled: bool = False
+    threat_intel_provider: str = "placeholder"
