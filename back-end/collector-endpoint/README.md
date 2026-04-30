@@ -1,0 +1,1 @@
+The **SmartSIEM Collector** is organized into modular components that handle log ingestion, parsing, normalization, and output processing.
