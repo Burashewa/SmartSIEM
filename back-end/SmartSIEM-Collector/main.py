@@ -33,22 +33,45 @@ def main() -> None:
     enrichment = EnrichmentManager(settings=settings)
 
     async def on_message(raw: str, source: str) -> None:
-        """Pipeline: parse -> normalize -> enrich -> queue."""
-        try:
-            result = parser.parse(raw, source=source)
-            if result.log_type == "empty":
-                return
-            normalized = normalize(
-                log_type=result.log_type,
-                fields=result.fields,
-                raw=result.raw,
-                source=source,
-            )
-            payload = normalized.to_json_dict()
-            enriched = await enrichment.enrich(payload)
-            await queue_writer.put(enriched)
-        except Exception as exc:
-            logger.warning("Pipeline error for log from %s: %s", source, exc)
+        """Pipeline: parse -> normalize -> enrich -> queue.
+
+        Accepts single-line text, multi-line text blobs, and JSON objects/arrays.
+        Any single bad line must not stall subsequent ingestion.
+        """
+
+        def _split_text_payload(text: str) -> list[str]:
+            lines = [ln.strip() for ln in text.splitlines()]
+            return [ln for ln in lines if ln]
+
+        # Many agents send newline-delimited logs in a single request. Process each line.
+        payloads: list[str] = [raw]
+        if isinstance(raw, str) and raw.strip() and not raw.lstrip().startswith(("{", "[")):
+            lines = _split_text_payload(raw)
+            if len(lines) > 1:
+                payloads = lines
+
+        for one in payloads:
+            try:
+                logger.debug("Pipeline start source=%s bytes=%d", source, len(one or ""))
+                result = parser.parse(one, source=source)
+                logger.debug("Parsed log_type=%s fields=%d", result.log_type, len(result.fields))
+                if result.log_type == "empty":
+                    continue
+                normalized = normalize(
+                    log_type=result.log_type,
+                    fields=result.fields,
+                    raw=result.raw,
+                    source=source,
+                )
+                payload = normalized.to_json_dict()
+                logger.debug("Normalized keys=%d", len(payload))
+                enriched = await enrichment.enrich(payload)
+                logger.debug("Enriched keys=%d", len(enriched))
+                await queue_writer.put(enriched)
+                logger.debug("Queued log_type=%s", result.log_type)
+            except Exception:
+                # Keep stack trace so "second log disappears" isn't a silent failure.
+                logger.exception("Pipeline error for log from %s", source)
 
     syslog = SyslogServer(settings=settings, on_message=on_message)
     http_api = HttpApiServer(settings=settings, on_message=on_message)

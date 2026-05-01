@@ -6,6 +6,7 @@ import logging
 from datetime import datetime
 from pathlib import Path
 from typing import Any
+import uuid
 
 from config.settings import Settings
 
@@ -144,11 +145,12 @@ class QueueWriter:
             logger.error("Failed to write to %s: %s", path, exc)
 
     async def _flush_to_mongo(self, batch: list[dict[str, Any]]) -> None:
-        """Store each log in MongoDB with Geo-IP enrichment."""
+        """Store each log in MongoDB (geo from ingest enrichment; storage path is non-blocking)."""
 
         def _do_batch() -> None:
             from database import _prepare_for_mongo
             from pymongo import MongoClient
+            from pymongo.errors import DuplicateKeyError
             from validators import SIEMValidator
 
             client = MongoClient(self._settings.mongo_uri)
@@ -162,7 +164,18 @@ class QueueWriter:
                         is_valid, cleaned, errors = validator.validate_and_clean(item)
                         if is_valid:
                             doc = _prepare_for_mongo(cleaned)
-                            coll.insert_one(doc)
+                            try:
+                                coll.insert_one(doc)
+                            except DuplicateKeyError:
+                                # Some senders reuse a constant event.id. If Mongo has a unique
+                                # index on event_id, retry once with a fresh ID so ingestion
+                                # never stalls.
+                                if isinstance(doc.get("event"), dict):
+                                    doc["event"]["id"] = str(uuid.uuid4())
+                                    doc["event_id"] = doc["event"]["id"]
+                                else:
+                                    doc["event_id"] = str(uuid.uuid4())
+                                coll.insert_one(doc)
                         else:
                             tags = cleaned.get("tags")
                             if not isinstance(tags, list):

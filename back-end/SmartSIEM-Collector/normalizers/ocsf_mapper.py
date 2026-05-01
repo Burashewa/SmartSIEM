@@ -415,6 +415,10 @@ def normalize(
     source: str = "",
 ) -> OCSFEvent:
     """Normalize parser output using the OCSF mapper engine."""
+    import logging
+
+    logger = logging.getLogger(__name__)
+    logger.debug("Normalize start log_type=%s fields=%d source=%s", log_type, len(fields), source or "unknown")
     _ = source  # Mapper is ingestion-source agnostic by design.
     raw_text = raw if isinstance(raw, str) else json.dumps(raw, ensure_ascii=False, default=str)
     result = ParseResult(log_type=log_type, fields=fields, raw=raw_text)
@@ -423,4 +427,6 @@ def normalize(
         mapped["timestamp"] = mapped.pop("time")
     if "raw_data" in mapped:
         mapped["raw_log"] = mapped.pop("raw_data")
-    return OCSFEvent(**mapped)
+    out = OCSFEvent(**mapped)
+    logger.debug("Normalize end keys=%d", len(out.model_dump(mode="json")))
+    return out

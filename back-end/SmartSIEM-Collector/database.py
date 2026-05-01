@@ -1,14 +1,11 @@
-"""MongoDB storage with Geo-IP enrichment for normalized logs."""
+"""MongoDB storage for normalized logs (geo from pipeline enrichment, not blocking HTTP)."""
 
 import asyncio
-import ipaddress
 import logging
-import time
 import uuid
 from datetime import datetime
 from typing import Any
 
-import requests
 from pymongo import MongoClient
 from pymongo.database import Database
 from pymongo.collection import Collection
@@ -19,13 +16,6 @@ logger = logging.getLogger(__name__)
 
 DB_NAME = "SIEM"
 COLLECTION_NAME = "logs"
-GEO_API_URL = "https://ipapi.co/{ip}/json/"
-GEO_CACHE_TTL_SUCCESS_SEC = 60 * 60 * 24
-GEO_CACHE_TTL_FAILURE_SEC = 60 * 15
-GEO_RATE_LIMIT_COOLDOWN_SEC = 60 * 5
-
-_geo_cache: dict[str, tuple[float, dict[str, Any]]] = {}
-_geo_rate_limited_until = 0.0
 
 
 def _ensure_source_geo(log_data: dict[str, Any]) -> dict[str, Any]:
@@ -46,102 +36,6 @@ def _apply_unknown_geo(log_data: dict[str, Any]) -> dict[str, Any]:
     geo = _ensure_source_geo(log_data)
     geo["country_name"] = geo.get("country_name") or "Unknown"
     geo["city_name"] = geo.get("city_name") or "Unknown"
-    return log_data
-
-
-def _is_non_public_ip(ip: str) -> bool:
-    """Return True for loopback/private/link-local/reserved IPs."""
-    try:
-        parsed = ipaddress.ip_address(ip)
-    except ValueError:
-        return True
-    return (
-        parsed.is_loopback
-        or parsed.is_private
-        or parsed.is_link_local
-        or parsed.is_reserved
-        or parsed.is_multicast
-        or parsed.is_unspecified
-    )
-
-
-def enrich_log_with_geo(log_data: dict[str, Any]) -> dict[str, Any]:
-    """
-    Enrich log with Geo-IP data from ipapi.co.
-
-    Injects source.geo.city_name and source.geo.country_name.
-    On API failure values are set to "Unknown".
-    """
-    global _geo_rate_limited_until
-
-    ip: Any = None
-    source = log_data.get("source")
-    if isinstance(source, dict):
-        ip = source.get("ip")
-    if not ip:
-        # Backward compatibility with any legacy flat events.
-        ip = log_data.get("ip")
-    if not ip or not isinstance(ip, str):
-        return _apply_unknown_geo(log_data)
-
-    ip = ip.strip()
-    if ip in ("", "localhost") or _is_non_public_ip(ip):
-        return _apply_unknown_geo(log_data)
-
-    now = time.time()
-    cached = _geo_cache.get(ip)
-    if cached and cached[0] > now:
-        data = cached[1]
-        geo = _ensure_source_geo(log_data)
-        geo["city_name"] = data.get("city_name") or "Unknown"
-        geo["country_name"] = data.get("country_name") or "Unknown"
-        return log_data
-
-    if now < _geo_rate_limited_until:
-        return _apply_unknown_geo(log_data)
-
-    try:
-        resp = requests.get(GEO_API_URL.format(ip=ip), timeout=5)
-        if resp.status_code == 429:
-            retry_after = resp.headers.get("Retry-After")
-            cooldown = GEO_RATE_LIMIT_COOLDOWN_SEC
-            if retry_after and retry_after.isdigit():
-                cooldown = max(int(retry_after), GEO_RATE_LIMIT_COOLDOWN_SEC)
-            _geo_rate_limited_until = time.time() + cooldown
-            logger.warning(
-                "Geo-IP rate limited for %s; backing off %ds",
-                ip,
-                cooldown,
-            )
-            _geo_cache[ip] = (time.time() + GEO_CACHE_TTL_FAILURE_SEC, {
-                "city_name": "Unknown",
-                "country_name": "Unknown",
-            })
-            return _apply_unknown_geo(log_data)
-        resp.raise_for_status()
-        data = resp.json()
-        geo = _ensure_source_geo(log_data)
-        geo["city_name"] = data.get("city") or "Unknown"
-        geo["country_name"] = data.get("country_name") or "Unknown"
-        _geo_cache[ip] = (time.time() + GEO_CACHE_TTL_SUCCESS_SEC, {
-            "city_name": geo["city_name"],
-            "country_name": geo["country_name"],
-        })
-    except requests.RequestException as exc:
-        logger.warning("Geo-IP lookup failed for %s: %s", ip, exc)
-        _geo_cache[ip] = (time.time() + GEO_CACHE_TTL_FAILURE_SEC, {
-            "city_name": "Unknown",
-            "country_name": "Unknown",
-        })
-        _apply_unknown_geo(log_data)
-    except Exception as exc:
-        logger.warning("Geo-IP parse error for %s: %s", ip, exc)
-        _geo_cache[ip] = (time.time() + GEO_CACHE_TTL_FAILURE_SEC, {
-            "city_name": "Unknown",
-            "country_name": "Unknown",
-        })
-        _apply_unknown_geo(log_data)
-
     return log_data
 
 
@@ -174,7 +68,12 @@ def _parse_timestamp(ts: str | None) -> datetime | None:
 
 
 def _prepare_for_mongo(log_data: dict[str, Any]) -> dict[str, Any]:
-    """Convert timestamp, add created_at, enrich with Geo-IP."""
+    """Convert timestamp, add created_at, ensure source.geo defaults for storage.
+
+    Geo resolution uses EnrichmentManager (e.g. MaxMind) on the ingest path.
+    This step must not perform blocking HTTP so Mongo inserts are never tied
+    to external Geo API rate limits or latency.
+    """
     import copy
 
     doc = copy.deepcopy(log_data)
@@ -199,7 +98,7 @@ def _prepare_for_mongo(log_data: dict[str, Any]) -> dict[str, Any]:
         if not isinstance(event_id, str) or not event_id.strip():
             doc["event_id"] = str(uuid.uuid4())
 
-    return enrich_log_with_geo(doc)
+    return _apply_unknown_geo(doc)
 
 
 def store_log_sync(

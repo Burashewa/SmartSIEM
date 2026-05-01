@@ -52,12 +52,18 @@ class BaseParser:
         if not raw or not raw.strip():
             return ParseResult(log_type="empty", fields={}, raw=raw)
 
+        logger.debug("Parse start source=%s bytes=%d", source or "unknown", len(raw))
+
         # JSON payload (from HTTP API)
         if self._is_json(raw):
-            return self._parse_json(raw, source)
+            out = self._parse_json(raw, source)
+            logger.debug("Parse end (json) log_type=%s fields=%d", out.log_type, len(out.fields))
+            return out
 
         # Plain text (syslog, access logs, etc.)
-        return self._parse_text(raw.strip(), source)
+        out = self._parse_text(raw.strip(), source)
+        logger.debug("Parse end (text) log_type=%s fields=%d", out.log_type, len(out.fields))
+        return out
 
     def _is_json(self, s: str) -> bool:
         """Check if string looks like JSON (object or array)."""
