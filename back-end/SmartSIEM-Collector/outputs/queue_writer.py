@@ -27,6 +27,9 @@ class QueueWriter:
         self._queue: asyncio.Queue[dict[str, Any] | None] = asyncio.Queue()
         self._task: asyncio.Task[None] | None = None
         self._running = False
+        self._kafka = None
+        # One-shot TLS diagnostics for Mongo (see SMARTSIEM_SSL_DIAG).
+        self._mongo_tls_diag_done = False
 
     async def put(self, item: dict[str, Any]) -> None:
         """Add a single normalized log (dict from NormalizedLog.to_json_dict())."""
@@ -60,7 +63,34 @@ class QueueWriter:
         if self._task:
             await asyncio.wait_for(self._task, timeout=10.0)
             self._task = None
+        self._close_kafka()
         logger.info("QueueWriter stopped")
+
+    def _get_kafka(self):
+        if self._kafka is not None:
+            return self._kafka
+        from outputs.kafka_writer import KafkaWriter
+
+        if not self._settings.kafka_bootstrap_servers:
+            raise ValueError(
+                "Kafka output selected but KAFKA_BOOTSTRAP_SERVERS is empty"
+            )
+        self._kafka = KafkaWriter(
+            bootstrap_servers=self._settings.kafka_bootstrap_servers,
+            topic=self._settings.kafka_topic,
+            cert_folder=self._settings.kafka_cert_folder,
+        )
+        return self._kafka
+
+    def _close_kafka(self) -> None:
+        if self._kafka is None:
+            return
+        try:
+            self._kafka.flush(timeout=10.0)
+        except Exception as exc:
+            logger.error("Kafka flush failed: %s", exc)
+        finally:
+            self._kafka = None
 
     async def _run(self) -> None:
         """Background task: drain queue and flush batches."""
@@ -124,8 +154,22 @@ class QueueWriter:
             await self._flush_to_file(batch)
         elif backend == "mongodb":
             await self._flush_to_mongo(batch)
+        elif backend == "kafka":
+            await self._flush_to_kafka(batch)
+        elif backend == "mongodb+kafka":
+            await self._flush_to_mongo(batch)
+            await self._flush_to_kafka(batch)
         else:
             logger.warning("Unknown queue_output %r; dropping %d items", backend, len(batch))
+
+    async def _flush_to_kafka(self, batch: list[dict[str, Any]]) -> None:
+        """Publish batch to Kafka as JSON messages."""
+        try:
+            kafka = self._get_kafka()
+            kafka.send_many(batch)
+            logger.debug("Published %d logs to Kafka topic=%s", len(batch), self._settings.kafka_topic)
+        except Exception as exc:
+            logger.error("Kafka publish failed: %s", exc)
 
     async def _flush_to_file(self, batch: list[dict[str, Any]]) -> None:
         """Append batch as NDJSON lines."""
@@ -149,11 +193,33 @@ class QueueWriter:
 
         def _do_batch() -> None:
             from database import _prepare_for_mongo
+            from outputs.ssl_diag import (
+                is_ssl_diag_enabled,
+                log_mongo_connect_failure,
+                log_ssl_verify_paths,
+                log_tls_env_flags,
+            )
             from pymongo import MongoClient
             from pymongo.errors import DuplicateKeyError
             from validators import SIEMValidator
 
-            client = MongoClient(self._settings.mongo_uri)
+            uri = self._settings.mongo_uri
+            # MongoClient uses only mongo_uri (and optional URI tls* params).
+            # No tlsCAFile / ssl_ca_certs is set here — not shared with Kafka certs.
+            client = MongoClient(uri)
+
+            if not self._mongo_tls_diag_done and is_ssl_diag_enabled():
+                log_tls_env_flags()
+                log_ssl_verify_paths("mongo: before admin ping (first batch)")
+                try:
+                    client.admin.command("ping")
+                except Exception as exc:
+                    log_mongo_connect_failure(exc, mongo_uri_hint=uri)
+                    client.close()
+                    raise
+                log_ssl_verify_paths("mongo: after successful admin ping")
+                self._mongo_tls_diag_done = True
+
             validator = SIEMValidator()
             try:
                 db = client["SIEM"]

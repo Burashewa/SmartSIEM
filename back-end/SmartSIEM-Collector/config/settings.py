@@ -21,7 +21,7 @@ class Settings(BaseSettings):
     http_host: str = "0.0.0.0"
     http_port: int = 8080
 
-    # Queue output ("file" | "mongodb" | "null")
+    # Queue output ("file" | "mongodb" | "kafka" | "mongodb+kafka" | "null")
     queue_output: str = "file"
     queue_file_path: str = "logs.ndjson"
     queue_batch_size: int = 100
@@ -29,6 +29,11 @@ class Settings(BaseSettings):
 
     # MongoDB (when queue_output="mongodb"); set via MONGO_URI env var
     mongo_uri: str = "mongodb://localhost:27017"
+
+    # Kafka (Aiven, etc.) (when queue_output includes "kafka")
+    kafka_bootstrap_servers: str = ""
+    kafka_topic: str = "normalized-logs"
+    kafka_cert_folder: str = "certs"
 
     # Enrichment (post-normalize, pre-output)
     enrichment_enabled: bool = True

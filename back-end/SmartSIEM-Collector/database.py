@@ -113,6 +113,9 @@ def store_log_sync(
         raise ValueError("Provide client or mongo_uri")
 
     if not client:
+        # TLS: options come only from the connection string (e.g. Atlas mongodb+srv).
+        # Do not pass tlsCAFile here unless you intend a dedicated Mongo CA bundle
+        # (never reuse Aiven Kafka ca.pem for Atlas).
         client = MongoClient(uri)
 
     db: Database = client[DB_NAME]
