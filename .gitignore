@@ -37,6 +37,9 @@ logs.ndjson
 *.ndjson
 *.log
 
+# Certificates (Aiven Kafka, etc.)
+back-end/SmartSIEM-Collector/certs/
+
 # IDE & editors
 .idea/
 .vscode/
