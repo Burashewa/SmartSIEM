@@ -57,12 +57,25 @@ class KafkaWriter:
         print(f"{_GREEN}{line}{_RESET}", flush=True)
         logger.debug("Kafka delivered to %s [%s]", msg.topic(), msg.partition())
 
+    def _produce_with_backpressure(self, payload: bytes) -> None:
+        warned = False
+        while True:
+            try:
+                self._producer.produce(
+                    self._topic, value=payload, callback=self._delivery_report
+                )
+                return
+            except BufferError:
+                if not warned:
+                    logger.warning("Kafka producer queue full; waiting to retry")
+                    warned = True
+                self._producer.poll(0.5)
+
     def send_many(self, events: list[dict[str, Any]]) -> None:
         for ev in events:
             payload = json.dumps(ev, ensure_ascii=False).encode("utf-8")
-            self._producer.produce(
-                self._topic, value=payload, callback=self._delivery_report
-            )
+            self._produce_with_backpressure(payload)
+            self._producer.poll(0)
         # Serve delivery callbacks without blocking.
         self._producer.poll(0)
 
