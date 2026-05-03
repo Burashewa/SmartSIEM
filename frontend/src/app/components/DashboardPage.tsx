@@ -18,6 +18,7 @@ import {
 } from '../api/dashboard';
 import {
   buildAttackLocations,
+  buildAttackLocationsFromAlerts,
   buildRecentAlerts,
   buildStreamEvents,
 } from '../lib/dashboardWidgets';
@@ -107,7 +108,9 @@ export function DashboardPage() {
 
   const metrics = summary?.metrics;
   const charts = summary?.charts;
-  const attackLocations = buildAttackLocations(logs);
+  const alertAttackLocations = buildAttackLocationsFromAlerts(alerts);
+  const attackLocations =
+    alertAttackLocations.length > 0 ? alertAttackLocations : buildAttackLocations(logs);
   const streamEvents = buildStreamEvents(logs);
   const recentAlerts = buildRecentAlerts(alerts);
 
@@ -178,8 +181,8 @@ export function DashboardPage() {
         <EventsBySourceChart data={charts?.eventsBySource ?? []} isLoading={isLoading} />
         <GeographicMap
           attacks={attackLocations}
-          isLoading={isActivityLoading}
-          error={activityError}
+          isLoading={isActivityLoading || isAlertsLoading}
+          error={alertsError ?? activityError}
         />
         <TerminalStream
           events={streamEvents}

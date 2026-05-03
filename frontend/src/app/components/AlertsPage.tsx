@@ -14,6 +14,8 @@ interface AlertItem {
   recommendations: string[];
   detectedBy: string;
   affectedAssets: string[];
+  attackerLocation: string;
+  attackerIsp?: string;
 }
 
 const readString = (value: unknown): string | undefined => {
@@ -62,14 +64,29 @@ const normalizeAlert = (alert: BackendAlertRecord): AlertItem => {
     title: ruleName,
     severity: (readString(alert.severity) ?? 'low').toLowerCase() as AlertItem['severity'],
     status: (readString(alert.status) ?? 'open').toLowerCase() as AlertItem['status'],
-    timestamp: new Date(alert.trigger_time).toLocaleString(),
+    timestamp: new Date(alert.trigger_time ?? alert.triggeredAt ?? Date.now()).toLocaleString(),
     sourceIp,
     targetIp,
     description: readString(alert.message) ?? `${ruleName} triggered`,
     recommendations,
     detectedBy: readString(context.source) ?? 'Unknown detection source',
     affectedAssets,
+    attackerLocation:
+      readString(alert.attackerLocation) ??
+      formatGeoLabel(alert.geo) ??
+      'Location unavailable',
+    attackerIsp: readString(alert.geo?.isp),
   };
+};
+
+const formatGeoLabel = (geo: BackendAlertRecord['geo']): string | undefined => {
+  if (!geo) return undefined;
+  const parts = [readString(geo.city), readString(geo.region), readString(geo.country)].filter(
+    Boolean,
+  );
+  if (parts.length > 0) return parts.join(', ');
+  if (geo.source === 'private') return 'Private network';
+  return undefined;
 };
 
 export function AlertsPage() {
@@ -265,6 +282,13 @@ export function AlertsPage() {
                   <div>
                     <h4 className="text-sm font-medium text-white mb-2">Source IP</h4>
                     <p className="text-sm text-gray-400 font-mono">{selectedAlert.sourceIp}</p>
+                  </div>
+                  <div>
+                    <h4 className="text-sm font-medium text-white mb-2">Attacker Location</h4>
+                    <p className="text-sm text-gray-400">{selectedAlert.attackerLocation}</p>
+                    {selectedAlert.attackerIsp ? (
+                      <p className="text-xs text-gray-500 mt-1">{selectedAlert.attackerIsp}</p>
+                    ) : null}
                   </div>
                   <div>
                     <h4 className="text-sm font-medium text-white mb-2">Target IP</h4>

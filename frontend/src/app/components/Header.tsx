@@ -1,4 +1,4 @@
-import { Search, Bell, User, Activity } from 'lucide-react';
+import { Bell, User, Activity } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { SystemStatus } from './SystemStatus';
 import { fetchSystemStatus, type SystemStatusResponse } from '../api/system';

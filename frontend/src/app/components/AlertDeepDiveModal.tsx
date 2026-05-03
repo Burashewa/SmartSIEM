@@ -30,8 +30,11 @@ export function AlertDeepDiveModal({ alert, isOpen, onClose }: AlertDeepDiveModa
     "ip": "${alert.sourceIp}",
     "port": ${Math.floor(Math.random() * 60000) + 1024},
     "geo": {
-      "country": "US",
-      "city": "Unknown"
+      "country": "${alert.attackerGeo?.country ?? 'Unknown'}",
+      "city": "${alert.attackerGeo?.city ?? 'Unknown'}",
+      "region": "${alert.attackerGeo?.region ?? 'Unknown'}",
+      "latitude": "${alert.attackerGeo?.lat ?? 'N/A'}",
+      "longitude": "${alert.attackerGeo?.lng ?? 'N/A'}"
     }
   },
   "destination": {
@@ -69,6 +72,8 @@ export function AlertDeepDiveModal({ alert, isOpen, onClose }: AlertDeepDiveModa
     { label: 'Rule Name', value: alert.ruleName },
     { label: 'Rule ID', value: alert.ruleId },
     { label: 'Source IP', value: alert.sourceIp },
+    { label: 'Attacker Location', value: alert.attackerLocation, highlight: true },
+    { label: 'Attacker ISP', value: alert.attackerGeo?.isp ?? 'N/A' },
     { label: 'Source Port', value: Math.floor(Math.random() * 60000) + 1024 },
     { label: 'Destination', value: destinationHost },
     { label: 'Destination Port', value: destinationPort },
@@ -82,7 +87,9 @@ export function AlertDeepDiveModal({ alert, isOpen, onClose }: AlertDeepDiveModa
     { label: 'Threat Indicator', value: alert.description },
     { label: 'Confidence Score', value: `${Math.floor(Math.random() * 30) + 70}%` },
     { label: 'Severity Score', value: alert.severity === 'critical' ? '9.5' : alert.severity === 'high' ? '7.8' : '5.2' },
-    { label: 'Country', value: 'United States' },
+    { label: 'Country', value: alert.attackerGeo?.country ?? 'Unknown' },
+    { label: 'City', value: alert.attackerGeo?.city ?? 'Unknown' },
+    { label: 'Coordinates', value: formatCoordinates(alert.attackerGeo?.lat, alert.attackerGeo?.lng) },
     { label: 'Bytes Sent', value: `${Math.floor(Math.random() * 10000)} bytes` },
     { label: 'Bytes Received', value: `${Math.floor(Math.random() * 50000)} bytes` },
   ];
@@ -252,4 +259,9 @@ Generated: ${new Date().toLocaleString()}
       </div>
     </div>
   );
+}
+
+function formatCoordinates(lat?: number, lng?: number): string {
+  if (typeof lat !== 'number' || typeof lng !== 'number') return 'N/A';
+  return `${lat.toFixed(4)}, ${lng.toFixed(4)}`;
 }

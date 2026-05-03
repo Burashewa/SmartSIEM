@@ -9,6 +9,7 @@ export interface AttackLocation {
   lat: number;
   lng: number;
   severity: WidgetSeverity;
+  sourceIp?: string;
 }
 
 export interface StreamEvent {
@@ -30,6 +31,78 @@ export interface RecentAlertRecord {
   status: 'New' | 'In-Progress' | 'Resolved';
   ruleId: string;
   ruleName: string;
+  attackerLocation: string;
+  attackerGeo?: {
+    city?: string;
+    region?: string;
+    country?: string;
+    lat?: number;
+    lng?: number;
+    isp?: string;
+    source?: string;
+  };
+}
+
+export function buildAttackLocationsFromAlerts(alerts: BackendAlertRecord[]): AttackLocation[] {
+  const clusters = new Map<
+    string,
+    {
+      latTotal: number;
+      lngTotal: number;
+      count: number;
+      severity: WidgetSeverity;
+      label: string;
+      sourceIp?: string;
+    }
+  >();
+
+  for (const alert of alerts) {
+    const lat = readNumber(alert.geo?.lat);
+    const lng = readNumber(alert.geo?.lng);
+
+    if (lat === undefined || lng === undefined || !isValidGeoPoint(lat, lng)) {
+      continue;
+    }
+
+    const key = `${lat.toFixed(1)}:${lng.toFixed(1)}`;
+    const existing = clusters.get(key);
+    const severity = normalizeSeverity(alert.severity);
+    const label = formatGeoLabel(alert.geo) ?? alert.attackerLocation ?? describeGeoRegion(lat, lng);
+
+    if (existing) {
+      existing.latTotal += lat;
+      existing.lngTotal += lng;
+      existing.count += 1;
+      existing.severity = higherSeverity(existing.severity, severity);
+      continue;
+    }
+
+    clusters.set(key, {
+      latTotal: lat,
+      lngTotal: lng,
+      count: 1,
+      severity,
+      label,
+      sourceIp: readString(alert.ip) ?? readString(alert.geo?.ip),
+    });
+  }
+
+  return Array.from(clusters.entries())
+    .map(([id, cluster]) => ({
+      id,
+      label: cluster.label,
+      count: cluster.count,
+      lat: roundToSingleDecimal(cluster.latTotal / cluster.count),
+      lng: roundToSingleDecimal(cluster.lngTotal / cluster.count),
+      severity: cluster.severity,
+      sourceIp: cluster.sourceIp,
+    }))
+    .sort((left, right) => {
+      const severityDelta = severityWeight(right.severity) - severityWeight(left.severity);
+      if (severityDelta !== 0) return severityDelta;
+      return right.count - left.count;
+    })
+    .slice(0, 6);
 }
 
 export function buildAttackLocations(logs: BackendLogRecord[]): AttackLocation[] {
@@ -119,7 +192,7 @@ export function buildRecentAlerts(alerts: BackendAlertRecord[]): RecentAlertReco
   return [...alerts]
     .sort(
       (left, right) =>
-        new Date(right.trigger_time).getTime() - new Date(left.trigger_time).getTime(),
+        new Date(readAlertTimestamp(right)).getTime() - new Date(readAlertTimestamp(left)).getTime(),
     )
     .slice(0, 10)
     .map((alert, index) => {
@@ -151,9 +224,10 @@ export function buildRecentAlerts(alerts: BackendAlertRecord[]): RecentAlertReco
       return {
         id:
           readString(alert._id) ??
+          readString(alert.id) ??
           readString(alert.alert_id) ??
-          `${normalizedRuleId}-${alert.trigger_time}-${index}`,
-        timestamp: alert.trigger_time,
+          `${normalizedRuleId}-${readAlertTimestamp(alert)}-${index}`,
+        timestamp: readAlertTimestamp(alert),
         severity: normalizeSeverity(alert.severity),
         sourceIp:
           readString(alert.ip) ??
@@ -176,8 +250,30 @@ export function buildRecentAlerts(alerts: BackendAlertRecord[]): RecentAlertReco
         status: normalizeAlertStatus(alert.status),
         ruleId: normalizedRuleId,
         ruleName,
+        attackerLocation:
+          readString(alert.attackerLocation) ??
+          formatGeoLabel(alert.geo) ??
+          'Location unavailable',
+        attackerGeo: alert.geo,
       };
     });
+}
+
+function readAlertTimestamp(alert: BackendAlertRecord): string {
+  return readString(alert.trigger_time) ?? readString(alert.triggeredAt) ?? new Date().toISOString();
+}
+
+function formatGeoLabel(
+  geo?: BackendAlertRecord['geo'],
+): string | undefined {
+  if (!geo) return undefined;
+  const city = readString(geo.city);
+  const region = readString(geo.region);
+  const country = readString(geo.country);
+  const parts = [city, region, country].filter(Boolean);
+  if (parts.length > 0) return parts.join(', ');
+  if (geo.source === 'private') return 'Private network';
+  return undefined;
 }
 
 function buildStreamMessage(log: BackendLogRecord): string {

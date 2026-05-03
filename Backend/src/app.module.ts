@@ -10,6 +10,7 @@ import { RulesModule } from './rules/rules.module';
 import { SystemModule } from './system/system.module';
 import { AuthModule } from './auth/auth.module';
 import { AgentsModule } from './agents/agents.module';
+import { AlertAssistantModule } from './alert-assistant/alert-assistant.module';
 
 @Module({
   imports: [
@@ -44,6 +45,7 @@ import { AgentsModule } from './agents/agents.module';
     SystemModule,
     AuthModule,
     AgentsModule,
+    AlertAssistantModule,
   ],
 })
 export class AppModule {}

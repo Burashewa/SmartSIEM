@@ -12,6 +12,7 @@ import { ReportsPage } from './components/ReportsPage';
 import { SettingsPage } from './components/SettingsPage';
 import { UserManagementPage } from './components/UserManagementPage';
 import { LoginScreen } from './components/LoginScreen';
+import { AlertRecommendationChatbot } from './components/AlertRecommendationChatbot';
 import {
   clearSession,
   getSession,
@@ -143,6 +144,7 @@ export default function App() {
         <main className="flex-1 overflow-auto p-6">
           {renderPage()}
         </main>
+        <AlertRecommendationChatbot />
       </div>
     </div>
   );

@@ -38,16 +38,31 @@ export interface BackendLogRecord {
 
 export interface BackendAlertRecord {
   _id?: string;
+  id?: string;
   alert_id?: string;
   rule_id?: string;
   ruleId?: string;
   rule_name?: string;
+  ruleName?: string;
   message?: string;
   severity: BackendSeverity | string;
-  trigger_time: string;
+  trigger_time?: string;
+  triggeredAt?: string;
   ip?: string;
   status: BackendAlertStatus | string;
   context?: Record<string, unknown>;
+  attackerLocation?: string;
+  geo?: {
+    ip: string;
+    city?: string;
+    region?: string;
+    country?: string;
+    countryCode?: string;
+    lat?: number;
+    lng?: number;
+    isp?: string;
+    source: 'context' | 'ip-api' | 'private' | 'unknown';
+  };
 }
 
 export interface DashboardSummaryResponse {

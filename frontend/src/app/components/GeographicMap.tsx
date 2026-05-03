@@ -54,7 +54,7 @@ export function GeographicMap({
               left: `${projectLongitude(attack.lng)}%`,
               top: `${projectLatitude(attack.lat)}%`,
             }}
-            title={`${attack.label} (${attack.count.toLocaleString()})`}
+            title={`${attack.label}${attack.sourceIp ? ` - ${attack.sourceIp}` : ''} (${attack.count.toLocaleString()})`}
           >
             <div
               className="size-4 rounded-full animate-ping absolute opacity-75"
@@ -83,6 +83,9 @@ export function GeographicMap({
                 style={{ backgroundColor: getSeverityColor(attack.severity) }}
               />
               <span className="text-gray-300">{attack.label}</span>
+              {attack.sourceIp ? (
+                <span className="font-mono text-xs text-gray-500">{attack.sourceIp}</span>
+              ) : null}
             </div>
             <span className="font-mono text-gray-400">{attack.count.toLocaleString()}</span>
           </div>
