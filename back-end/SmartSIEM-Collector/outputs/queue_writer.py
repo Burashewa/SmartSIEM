@@ -79,6 +79,7 @@ class QueueWriter:
             bootstrap_servers=self._settings.kafka_bootstrap_servers,
             topic=self._settings.kafka_topic,
             cert_folder=self._settings.kafka_cert_folder,
+            security_protocol=self._settings.kafka_security_protocol,
         )
         return self._kafka
 

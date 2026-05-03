@@ -18,6 +18,7 @@ class KafkaWriter:
         bootstrap_servers: str,
         topic: str,
         cert_folder: str = "certs",
+        security_protocol: str = "SSL",
         client_id: str = "smartsiem-collector",
     ) -> None:
         self._topic = topic
@@ -26,15 +27,19 @@ class KafkaWriter:
         if is_ssl_diag_enabled():
             log_ssl_verify_paths("kafka: before Producer() (librdkafka SSL conf only)")
 
+        proto = (security_protocol or "SSL").strip().upper()
         conf: dict[str, Any] = {
             "bootstrap.servers": bootstrap_servers,
-            "security.protocol": "SSL",
-            "ssl.ca.location": f"{cert_folder}/ca.pem",
-            "ssl.certificate.location": f"{cert_folder}/service.cert",
-            "ssl.key.location": f"{cert_folder}/service.key",
             "client.id": client_id,
             "acks": 1,
         }
+        if proto == "PLAINTEXT":
+            conf["security.protocol"] = "PLAINTEXT"
+        else:
+            conf["security.protocol"] = "SSL"
+            conf["ssl.ca.location"] = f"{cert_folder}/ca.pem"
+            conf["ssl.certificate.location"] = f"{cert_folder}/service.cert"
+            conf["ssl.key.location"] = f"{cert_folder}/service.key"
         self._producer = Producer(conf)
 
         if is_ssl_diag_enabled():

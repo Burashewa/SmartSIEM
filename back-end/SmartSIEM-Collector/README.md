@@ -34,6 +34,15 @@ smartsiem-collector/
 ```
 # Sends processed logs to a message queue or file storage
 
+## Run
+
+Install once: `python -m venv venv` then `.\venv\Scripts\pip install -r requirements.txt`.  
+Start the collector with the venv interpreter (not a global `python`, or you get missing modules):
+
+`.\venv\Scripts\python.exe main.py` or `.\run.ps1`
+
+End-to-end (HTTP → collector → Kafka → detection worker): with collector and worker running, run `python send_test_logs_to_collector.py` or `python scripts/send_test_logs_to_collector.py` (optional `--base-url` / `--worker-url`).
+
 ## 🔄 Processing Pipeline
 
 The collector processes logs in **four main stages**:

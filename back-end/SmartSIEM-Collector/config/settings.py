@@ -30,10 +30,12 @@ class Settings(BaseSettings):
     # MongoDB (when queue_output="mongodb"); set via MONGO_URI env var
     mongo_uri: str = "mongodb://localhost:27017"
 
-    # Kafka (Aiven, etc.) (when queue_output includes "kafka")
+    # Kafka (when queue_output includes "kafka")
     kafka_bootstrap_servers: str = ""
     kafka_topic: str = "normalized-logs"
     kafka_cert_folder: str = "certs"
+    # PLAINTEXT for local brokers; SSL + kafka_cert_folder PEMs for Aiven/mTLS.
+    kafka_security_protocol: str = "SSL"
 
     # Enrichment (post-normalize, pre-output)
     enrichment_enabled: bool = True

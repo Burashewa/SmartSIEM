@@ -65,3 +65,5 @@ coverage.xml
 .mypy_cache/
 .dmypy.json
 dmypy.json
+/back-end/SmartSIEM-Collector/.mypy_cache/
+/back-end/detection-worker/node_modules
