@@ -1,5 +1,6 @@
 """Environment-based configuration for SmartSIEM Collector."""
 
+from pydantic import AliasChoices, Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -19,10 +20,14 @@ class Settings(BaseSettings):
 
     # HTTP API listener (for agents sending JSON)
     http_host: str = "0.0.0.0"
-    http_port: int = 8080
+    # Accept Render's dynamic PORT while keeping HTTP_PORT compatibility.
+    http_port: int = Field(
+        default=8080,
+        validation_alias=AliasChoices("HTTP_PORT", "PORT"),
+    )
 
     # Queue output ("file" | "mongodb" | "kafka" | "mongodb+kafka" | "null")
-    queue_output: str = "file"
+    queue_output: str = "mongodb+kafka"
     queue_file_path: str = "logs.ndjson"
     queue_batch_size: int = 100
     queue_flush_interval_ms: int = 1000

@@ -1,17 +1,22 @@
 ## 📁 Project Folder Structure
 
-The **SmartSIEM Collector** is organized into modular components that handle log ingestion, parsing, normalization, and output processing.
+The **SmartSIEM Collector** is organized into modular components that handle ingestion, parsing, enrichment, normalization, validation, and output.
 
 ## 📁 Folder Structure
 
 ```text
-smartsiem-collector/
+SmartSIEM-Collector/
 │
 ├── main.py
+├── database.py
 ├── requirements.txt
-├── .env
+├── test_payload.json
+├── logs.ndjson
+├── logs_test.ndjson
+├── dead_letter_test.ndjson
 │
 ├── config/
+│   ├── __init__.py
 │   └── settings.py
 │
 ├── listeners/
@@ -21,36 +26,70 @@ smartsiem-collector/
 │
 ├── parsers/
 │   ├── __init__.py
+│   ├── base_parser.py
 │   ├── regex_rules.py
-│   └── base_parser.py
+│   └── rules/
+│       ├── __init__.py
+│       ├── base.py
+│       ├── linux.py
+│       └── web.py
 │
 ├── normalizers/
 │   ├── __init__.py
-│   └── schema.py
+│   ├── ocsf_mapper.py
+│   └── ocsf_model.py
 │
-└── outputs/
-    ├── __init__.py
-    └── queue_writer.py
+├── enrichment/
+│   ├── __init__.py
+│   ├── asset_db.py
+│   ├── dns.py
+│   ├── engine.py
+│   ├── geoip.py
+│   ├── manager.py
+│   ├── maxmind_geo.py
+│   └── threat_intel.py
+│
+├── validators/
+│   ├── __init__.py
+│   └── event_validators.py
+│
+├── outputs/
+│   ├── __init__.py
+│   ├── kafka_writer.py
+│   ├── queue_writer.py
+│   └── ssl_diag.py
+│
+├── certs/
+│   └── service.cert
+│
+└── scripts/
+    ├── fetch_geolite2_city.sh
+    ├── run_collector.sh
+    └── setup_venv.sh
 ```
-# Sends processed logs to a message queue or file storage
 
 ## 🔄 Processing Pipeline
 
-The collector processes logs in **four main stages**:
+The collector processes logs in **six main stages**:
 
-1. **Ingestion**  
+1. **Ingestion**
    Logs are received through:
    - Syslog (UDP/TCP)
    - HTTP API from agents
 
-2. **Parsing**  
-   Raw log messages are analyzed using predefined **regex rules** to extract structured fields.
+2. **Parsing**
+   Raw log messages are analyzed using regex rules to extract structured fields.
 
-3. **Normalization**  
-   Parsed logs are converted into a **standard JSON schema** to ensure consistency.
+3. **Enrichment**
+   Events are augmented with asset data, DNS, GeoIP, and threat intel where available.
 
-4. **Output**  
-   The normalized logs are sent to:
-   - Message queues (e.g., Kafka, RabbitMQ)
-   - Files
-   - Downstream SIEM components
+4. **Normalization**
+   Parsed logs are mapped into the OCSF model for consistent downstream handling.
+
+5. **Validation**
+   Normalized events are checked for required fields and schema consistency.
+
+6. **Output**
+   Valid events are sent to:
+   - Message queues (Kafka or other queue backends)
+   - File-based outputs for testing and diagnostics
