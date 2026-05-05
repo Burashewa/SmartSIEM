@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef } from 'react';
 import { Terminal, AlertCircle, Shield, Activity } from 'lucide-react';
 
-interface LogEvent {
+export interface LogEvent {
   id: string;
   timestamp: string;
   type: 'info' | 'warning' | 'critical' | 'success';
@@ -21,7 +21,12 @@ const eventTemplates = [
   { type: 'warning' as const, message: 'Port scan detected from 203.{x}.{y}.{z}' },
 ];
 
-export function TerminalStream() {
+interface TerminalStreamProps {
+  /** Live lines from backends (e.g. collector + detection-worker); shown above simulated traffic. */
+  priorityEvents?: LogEvent[];
+}
+
+export function TerminalStream({ priorityEvents = [] }: TerminalStreamProps) {
   const [events, setEvents] = useState<LogEvent[]>([]);
   const scrollRef = useRef<HTMLDivElement>(null);
 
@@ -44,16 +49,18 @@ export function TerminalStream() {
         const updated = [newEvent, ...prev];
         return updated.slice(0, 50); // Keep last 50 events
       });
-    }, 2000);
+    }, priorityEvents.length > 0 ? 4500 : 2000);
 
     return () => clearInterval(interval);
-  }, []);
+  }, [priorityEvents.length]);
+
+  const displayEvents = [...priorityEvents, ...events].slice(0, 50);
 
   useEffect(() => {
     if (scrollRef.current) {
       scrollRef.current.scrollTop = 0;
     }
-  }, [events]);
+  }, [events, priorityEvents]);
 
   const getEventIcon = (type: string) => {
     switch (type) {
@@ -78,11 +85,21 @@ export function TerminalStream() {
       <div className="flex items-center justify-between mb-4">
         <div>
           <h3 className="text-lg font-medium text-white">Live Event Stream</h3>
-          <p className="text-sm text-gray-400 mt-1">Real-time system events</p>
+          <p className="text-sm text-gray-400 mt-1">
+            {priorityEvents.length > 0
+              ? 'Collector + detection-worker status (top); simulated SOC traffic below'
+              : 'Simulated events — start backends and dev server to see live status'}
+          </p>
         </div>
         <div className="flex items-center gap-2">
-          <div className="size-2 rounded-full bg-[#10b981] animate-pulse" />
-          <span className="text-xs text-gray-400 font-mono">STREAMING</span>
+          <div
+            className={`size-2 rounded-full animate-pulse ${
+              priorityEvents.length > 0 ? 'bg-[#10b981]' : 'bg-[#6b7280]'
+            }`}
+          />
+          <span className="text-xs text-gray-400 font-mono">
+            {priorityEvents.length > 0 ? 'LIVE+SIM' : 'DEMO'}
+          </span>
         </div>
       </div>
       
@@ -94,7 +111,7 @@ export function TerminalStream() {
           scrollbarColor: '#2a2a3a #000000',
         }}
       >
-        {events.map((event) => (
+        {displayEvents.map((event) => (
           <div key={event.id} className="mb-1.5 animate-fadeIn">
             <div className={`flex items-start gap-2 ${getEventColor(event.type)}`}>
               <span className="text-gray-500">[{event.timestamp}]</span>
@@ -108,7 +125,7 @@ export function TerminalStream() {
       {/* Terminal indicator */}
       <div className="mt-3 flex items-center gap-2 text-xs text-gray-500">
         <Terminal className="size-3" />
-        <span>Events: {events.length} | Auto-scroll enabled</span>
+        <span>Events: {displayEvents.length} | Auto-scroll enabled</span>
       </div>
     </div>
   );

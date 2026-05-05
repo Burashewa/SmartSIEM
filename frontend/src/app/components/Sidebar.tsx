@@ -10,26 +10,26 @@ import {
   Cpu,
   Lock
 } from 'lucide-react';
+import { NavLink } from "react-router-dom";
 
 interface SidebarProps {
   currentPage: string;
-  onNavigate: (page: string) => void;
 }
 
 const navItems = [
-  { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard },
-  { id: 'logs', label: 'Log Management', icon: FileText },
-  { id: 'alerts', label: 'Alerts', icon: AlertTriangle },
-  { id: 'threat-detection', label: 'Threat Detection', icon: Shield },
-  { id: 'detection-rules', label: 'Detection Rules', icon: GitBranch },
-  { id: 'ai-recommendations', label: 'AI Recommendations', icon: Cpu },
-  { id: 'access-control', label: 'Access Control', icon: Lock },
-  { id: 'reports', label: 'Reports', icon: FileBarChart },
-  { id: 'users', label: 'User Management', icon: Users },
-  { id: 'settings', label: 'Settings', icon: Settings },
+  { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard, to: "/dashboard" },
+  { id: 'logs', label: 'Log Management', icon: FileText, to: "/logs" },
+  { id: 'alerts', label: 'Alerts', icon: AlertTriangle, to: "/alerts" },
+  { id: 'threat-detection', label: 'Threat Detection', icon: Shield, to: "/threat-detection" },
+  { id: 'detection-rules', label: 'Detection Rules', icon: GitBranch, to: "/detection-rules" },
+  { id: 'ai-recommendations', label: 'AI Recommendations', icon: Cpu, to: "/ai-recommendations" },
+  { id: 'access-control', label: 'Access Control', icon: Lock, to: "/access-control" },
+  { id: 'reports', label: 'Reports', icon: FileBarChart, to: "/reports" },
+  { id: 'users', label: 'User Management', icon: Users, to: "/users" },
+  { id: 'settings', label: 'Settings', icon: Settings, to: "/settings" },
 ];
 
-export function Sidebar({ currentPage, onNavigate }: SidebarProps) {
+export function Sidebar({ currentPage }: SidebarProps) {
   return (
     <div className="w-64 bg-[#0f0f17] border-r border-[#1f1f2e] flex flex-col">
       {/* Logo */}
@@ -47,9 +47,9 @@ export function Sidebar({ currentPage, onNavigate }: SidebarProps) {
           const Icon = item.icon;
           const isActive = currentPage === item.id;
           return (
-            <button
+            <NavLink
               key={item.id}
-              onClick={() => onNavigate(item.id)}
+              to={item.to}
               className={`w-full flex items-center gap-3 px-3 py-2.5 mb-1 transition-colors ${
                 isActive
                   ? 'bg-[#4f46e5] text-white'
@@ -58,7 +58,7 @@ export function Sidebar({ currentPage, onNavigate }: SidebarProps) {
             >
               <Icon className="size-5" />
               <span className="text-sm">{item.label}</span>
-            </button>
+            </NavLink>
           );
         })}
       </nav>
