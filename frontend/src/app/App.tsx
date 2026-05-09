@@ -1,3 +1,4 @@
+import React from "react";
 import { useMemo, useState } from "react";
 import { Navigate, Route, Routes, useLocation } from "react-router-dom";
 import { Sidebar } from "./components/Sidebar";
@@ -22,6 +23,10 @@ import { Documentation } from "./components/Documentation";
 import { CTA } from "./components/CTA";
 import { Footer } from "./components/Footer";
 import { DocumentationPage } from "./components/DocumentationPage";
+import { LoginPage } from "./auth/LoginPage";
+import { RegisterPage } from "./auth/RegisterPage";
+import { ProtectedRoute } from "./auth/ProtectedRoute";
+
 function LandingPage() {
   return (
     <>
@@ -59,50 +64,56 @@ export default function App() {
       <Route path="/" element={<LandingPage />} />
       <Route path="/LandingPage" element={<Navigate to="/" replace />} />
       <Route path="/docs" element={<DocumentationPage />} />
+      <Route path="/login" element={<LoginPage />} />
+      <Route path="/register" element={<RegisterPage />} />
 
       {/* App shell routes: sidebar + header */}
       <Route
-        path="/*"
-        element={
-          <div className="h-screen w-screen bg-[#0a0a0f] text-foreground flex overflow-hidden dark">
-            <Sidebar currentPage={currentPage} />
-            <div className="flex-1 flex flex-col overflow-hidden">
-              <Header systemStatus={systemStatus} />
-              <main className="flex-1 overflow-auto p-6 bg-[#0a0a0f]">
-                <Routes>
-                  <Route
-                    path="dashboard"
-                    element={<DashboardPage onSystemStatus={setSystemStatus} />}
-                  />
-                  <Route path="logs" element={<LogManagementPage />} />
-                  <Route path="alerts" element={<AlertsPage />} />
-                  <Route
-                    path="detection-rules"
-                    element={<DetectionRulesPage />}
-                  />
-                  <Route
-                    path="threat-detection"
-                    element={<ThreatDetectionPage />}
-                  />
-                  <Route
-                    path="ai-recommendations"
-                    element={<AIRecommendationsPage />}
-                  />
-                  <Route
-                    path="access-control"
-                    element={<AccessControlPage />}
-                  />
-                  <Route path="reports" element={<ReportsPage />} />
-                  <Route path="users" element={<UserManagementPage />} />
-                  <Route path="settings" element={<SettingsPage />} />
+        element={<ProtectedRoute />}
+      >
+        <Route
+          path="/*"
+          element={
+            <div className="h-screen w-screen bg-[#0a0a0f] text-foreground flex overflow-hidden dark">
+              <Sidebar currentPage={currentPage} />
+              <div className="flex-1 flex flex-col overflow-hidden">
+                <Header systemStatus={systemStatus} />
+                <main className="flex-1 overflow-auto p-6 bg-[#0a0a0f]">
+                  <Routes>
+                    <Route
+                      path="dashboard"
+                      element={<DashboardPage onSystemStatus={setSystemStatus} />}
+                    />
+                    <Route path="logs" element={<LogManagementPage />} />
+                    <Route path="alerts" element={<AlertsPage />} />
+                    <Route
+                      path="detection-rules"
+                      element={<DetectionRulesPage />}
+                    />
+                    <Route
+                      path="threat-detection"
+                      element={<ThreatDetectionPage />}
+                    />
+                    <Route
+                      path="ai-recommendations"
+                      element={<AIRecommendationsPage />}
+                    />
+                    <Route
+                      path="access-control"
+                      element={<AccessControlPage />}
+                    />
+                    <Route path="reports" element={<ReportsPage />} />
+                    <Route path="users" element={<UserManagementPage />} />
+                    <Route path="settings" element={<SettingsPage />} />
 
-                  <Route path="*" element={<Navigate to="/dashboard" replace />} />
-                </Routes>
-              </main>
+                    <Route path="*" element={<Navigate to="/dashboard" replace />} />
+                  </Routes>
+                </main>
+              </div>
             </div>
-          </div>
-        }
-      />
+          }
+        />
+      </Route>
     </Routes>
   );
 }

@@ -25,6 +25,8 @@ Node.js worker that consumes normalized log events from Kafka, runs detection ru
    | `WORKER_PORT` | HTTP health port (default `4000`) |
    | `FLUSH_INTERVAL_MS` | How often log/alert batches flush to Mongo |
    | `RULE_RELOAD_INTERVAL_SEC` | How often rules reload from Mongo |
+   | `AUTH_JWT_SECRET` | Optional. If set, dashboard API routes require `Authorization: Bearer <access_token>` from collector login (must match collector `AUTH_JWT_SECRET` / `auth_jwt_secret`) |
+   | `AUTH_JWT_ISSUER` | JWT `iss` claim (default `smartsiem-collector`, same as collector `auth_jwt_issuer`) |
 
 2. **Create Kafka topics** (names must match `RAW_LOGS_TOPIC` and `ALERTS_TOPIC` in `.env`):
 
@@ -76,6 +78,17 @@ http://localhost:4000/health
 
 Returns JSON including `ok`, `totalProcessed`, and `totalAlerts`.
 
+## Dashboard API JWT
+
+When `AUTH_JWT_SECRET` is set (use the **same** value as SmartSIEM-Collector’s JWT signing secret), these routes require a valid access token: `Authorization: Bearer <token>` from `/auth/login` on the collector.
+
+- **Public (no JWT):** `GET /`, `GET /health`, `GET /stats` (in-process counters)
+- **Protected:** `/alerts`, `/rules`, `/logs`, `/stats/timeseries`, `/stats/summary`, `/recommendations`
+
+If `AUTH_JWT_SECRET` is empty, those routes stay open (convenient for local dev).
+
+The frontend sends the stored access token automatically for `/api/worker/*` requests when you are logged in.
+
 ## Stop
 
 Press **Ctrl+C** in the terminal. The worker handles **SIGINT** / **SIGTERM**: it stops the consumer, flushes batches, disconnects Kafka and MongoDB, and stops the health server.
@@ -84,6 +97,7 @@ Press **Ctrl+C** in the terminal. The worker handles **SIGINT** / **SIGTERM**: i
 
 | Symptom | What to check |
 |---------|----------------|
+| Dashboard API returns `401 Missing Authorization` or `jwt expired` | Set `AUTH_JWT_SECRET` on the worker to match the collector; log in on the UI so the access token is stored, or call with `Authorization: Bearer <token>`. |
 | Exits immediately after “Kafka producer connection failed” | Kafka is not running or `KAFKA_BROKERS` is wrong. |
 | `UNKNOWN_TOPIC_OR_PARTITION` / consumer errors on subscribe | Create `raw.logs` and `alerts` topics (see above), then restart. |
 | Mongo errors on startup | MongoDB is running and `MONGODB_URI` is correct. |

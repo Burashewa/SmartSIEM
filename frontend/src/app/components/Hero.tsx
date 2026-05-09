@@ -23,10 +23,13 @@ export function Hero() {
           </p>
 
           <div className="flex flex-col sm:flex-row gap-4 justify-center items-center">
-            <button className="group px-8 py-4 bg-indigo-600 hover:bg-indigo-500 text-white rounded-lg transition-all duration-200 flex items-center gap-2 shadow-lg shadow-indigo-500/30 hover:shadow-indigo-500/50">
+            <Link
+              to="/register"
+              className="group px-8 py-4 bg-indigo-600 hover:bg-indigo-500 text-white rounded-lg transition-all duration-200 flex items-center gap-2 shadow-lg shadow-indigo-500/30 hover:shadow-indigo-500/50"
+            >
               Get Started
               <ArrowRight className="w-5 h-5 group-hover:translate-x-1 transition-transform" />
-            </button>
+            </Link>
             <Link
               to="/docs"
               className="px-8 py-4 bg-white/5 hover:bg-white/10 text-white rounded-lg border border-white/10 backdrop-blur-sm transition-all duration-200 flex items-center gap-2"

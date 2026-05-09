@@ -73,11 +73,14 @@ def _request_json(
         return status, body
 
 
-def post_ingest(base_url: str, payload: object) -> tuple[int, str]:
-    """POST a JSON object or array to /ingest."""
+def post_ingest(base_url: str, payload: object, *, api_key: str | None = None) -> tuple[int, str]:
+    """POST a JSON object or array to /ingest (optionally with agent API key)."""
     raw = json.dumps(payload, ensure_ascii=False).encode("utf-8")
     url = f"{base_url.rstrip('/')}/ingest"
-    req = urllib.request.Request(url, data=raw, method="POST", headers={"Content-Type": "application/json"})
+    headers = {"Content-Type": "application/json"}
+    if api_key:
+        headers["X-API-Key"] = api_key
+    req = urllib.request.Request(url, data=raw, method="POST", headers=headers)
     try:
         with urllib.request.urlopen(req, timeout=120) as resp:
             return resp.status, resp.read().decode("utf-8", errors="replace")
@@ -108,6 +111,11 @@ def main() -> int:
         default="http://127.0.0.1:4000",
         help="Detection worker base URL for before/after /stats (default: %(default)s)",
     )
+    parser.add_argument(
+        "--api-key",
+        default="",
+        help="Optional agent API key for collector /ingest (used when REQUIRE_INGEST_AUTH=true)",
+    )
     parser.add_argument("--delay-ms", type=int, default=120, help="Pause between single-log POSTs (default %(default)s)")
     parser.add_argument(
         "--file-mod-count",
@@ -119,6 +127,7 @@ def main() -> int:
     base = args.base_url.rstrip("/")
     delay = max(0, args.delay_ms) / 1000.0
     file_mod_n = max(1, args.file_mod_count)
+    api_key = args.api_key.strip() or None
 
     print(f"[send-test] collector health: GET {base}/health")
     code, health = get_collector_health(base)
@@ -134,7 +143,7 @@ def main() -> int:
 
     def send(label: str, payload: object) -> None:
         try:
-            status, body = post_ingest(base, payload)
+            status, body = post_ingest(base, payload, api_key=api_key)
             tail = body[:200] + ("…" if len(body) > 200 else "")
             print(f"[send-test] {label} -> HTTP {status}: {tail!r}")
         except urllib.error.URLError as exc:
@@ -144,7 +153,7 @@ def main() -> int:
     def send_many(label: str, payloads: list[dict[str, object]]) -> None:
         """Single HTTP request with a JSON array (collector processes each element)."""
         try:
-            status, body = post_ingest(base, payloads)
+            status, body = post_ingest(base, payloads, api_key=api_key)
             tail = body[:200] + ("…" if len(body) > 200 else "")
             print(f"[send-test] {label} ({len(payloads)} logs) -> HTTP {status}: {tail!r}")
         except urllib.error.URLError as exc:

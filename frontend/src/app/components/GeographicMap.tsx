@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
 import { MapPin } from 'lucide-react';
+import { fetchLogs } from '@/lib/smartsiemApi';
 
 interface AttackLocation {
   id: string;
@@ -10,26 +11,86 @@ interface AttackLocation {
   severity: 'critical' | 'high' | 'medium' | 'low';
 }
 
+function normalizeSeverity(count: number) {
+  if (count > 50) return 'critical';
+  if (count > 25) return 'high';
+  if (count > 10) return 'medium';
+  return 'low';
+}
+
+function projectCoordinates(lat: number, lng: number) {
+  return {
+    left: `${Math.min(92, Math.max(6, 50 + lng * 0.35))}%`,
+    top: `${Math.min(88, Math.max(6, 50 - lat * 0.25))}%`,
+  };
+}
+
 export function GeographicMap() {
-  const [attacks, setAttacks] = useState<AttackLocation[]>([
-    { id: '1', country: 'Russia', count: 2341, lat: 55, lng: 37, severity: 'critical' },
-    { id: '2', country: 'China', count: 1892, lat: 39, lng: 116, severity: 'high' },
-    { id: '3', country: 'USA', count: 1234, lat: 40, lng: -74, severity: 'medium' },
-    { id: '4', country: 'Germany', count: 876, lat: 52, lng: 13, severity: 'low' },
-    { id: '5', country: 'Brazil', count: 654, lat: -23, lng: -46, severity: 'medium' },
-  ]);
+  const [attacks, setAttacks] = useState<AttackLocation[]>([]);
+  const [lastUpdated, setLastUpdated] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    const interval = setInterval(() => {
-      setAttacks(prev => 
-        prev.map(attack => ({
-          ...attack,
-          count: Math.max(0, attack.count + Math.floor((Math.random() - 0.3) * 50))
-        }))
-      );
-    }, 7000);
+    let mounted = true;
 
-    return () => clearInterval(interval);
+    async function loadGeoAttacks() {
+      try {
+        const response = await fetchLogs({ limit: 100 });
+        const byCountry = new Map<string, AttackLocation>();
+
+        response.items.forEach((item) => {
+          const geo = item.source?.geo;
+          const country = geo?.country_name || 'Unknown';
+          const lat = typeof geo?.latitude === 'number' ? geo.latitude : undefined;
+          const lng = typeof geo?.longitude === 'number' ? geo.longitude : undefined;
+          if (lat == null || lng == null) return;
+
+          const id = `${country}-${Math.round(lat)}-${Math.round(lng)}`;
+          const existing = byCountry.get(id);
+          if (existing) {
+            existing.count += 1;
+            existing.severity = normalizeSeverity(existing.count);
+          } else {
+            byCountry.set(id, {
+              id,
+              country,
+              count: 1,
+              lat,
+              lng,
+              severity: 'low',
+            });
+          }
+        });
+
+        const topAttacks = [...byCountry.values()]
+          .sort((a, b) => b.count - a.count)
+          .slice(0, 6)
+          .map((attack) => ({
+            ...attack,
+            severity: normalizeSeverity(attack.count),
+          }));
+
+        if (mounted) {
+          setAttacks(topAttacks);
+          setLastUpdated(new Date().toLocaleTimeString('en-US', { hour12: false }));
+          setError(null);
+        }
+      } catch (err) {
+        if (mounted) {
+          setError('Unable to load backend geo events.');
+        }
+      }
+    }
+
+    void loadGeoAttacks();
+    const interval = window.setInterval(() => {
+      void loadGeoAttacks();
+    }, 15000);
+
+    return () => {
+      mounted = false;
+      window.clearInterval(interval);
+    };
   }, []);
 
   const getSeverityColor = (severity: string) => {
@@ -55,43 +116,63 @@ export function GeographicMap() {
         <div className="absolute inset-0" style={{
           backgroundImage: 'repeating-linear-gradient(0deg, transparent, transparent 19px, #2a2a3a 19px, #2a2a3a 20px), repeating-linear-gradient(90deg, transparent, transparent 19px, #2a2a3a 19px, #2a2a3a 20px)',
         }} />
-        
-        {/* Attack indicators */}
-        {attacks.map((attack, idx) => (
-          <div
-            key={attack.id}
-            className="absolute animate-pulse"
-            style={{
-              left: `${15 + idx * 18}%`,
-              top: `${30 + (idx % 3) * 20}%`,
-            }}
-          >
-            <div 
-              className="size-4 rounded-full animate-ping absolute opacity-75"
-              style={{ backgroundColor: getSeverityColor(attack.severity) }}
-            />
-            <MapPin 
-              className="size-4 relative z-10" 
-              style={{ color: getSeverityColor(attack.severity) }}
-            />
+
+        {attacks.length === 0 && !error && (
+          <div className="absolute inset-0 flex items-center justify-center text-sm text-gray-500">
+            Loading backend geo events...
           </div>
-        ))}
+        )}
+
+        {error && (
+          <div className="absolute inset-0 flex items-center justify-center text-sm text-amber-300">
+            {error}
+          </div>
+        )}
+
+        {attacks.map((attack) => {
+          const position = projectCoordinates(attack.lat, attack.lng);
+          return (
+            <div
+              key={attack.id}
+              className="absolute animate-pulse"
+              style={position}
+            >
+              <div
+                className="size-4 rounded-full animate-ping absolute opacity-75"
+                style={{ backgroundColor: getSeverityColor(attack.severity) }}
+              />
+              <MapPin
+                className="size-4 relative z-10"
+                style={{ color: getSeverityColor(attack.severity) }}
+              />
+            </div>
+          );
+        })}
+      </div>
+
+      <div className="flex items-center justify-between text-xs text-gray-500 mb-2">
+        <span>{attacks.length > 0 ? 'Live attack positions from worker logs.' : 'No geo events available yet.'}</span>
+        {lastUpdated && <span>Last update: {lastUpdated}</span>}
       </div>
 
       {/* Attack list */}
       <div className="space-y-2">
-        {attacks.map((attack) => (
-          <div key={attack.id} className="flex items-center justify-between text-sm">
-            <div className="flex items-center gap-2">
-              <div 
-                className="size-2 rounded-full"
-                style={{ backgroundColor: getSeverityColor(attack.severity) }}
-              />
-              <span className="text-gray-300">{attack.country}</span>
+        {attacks.length === 0 && !error ? (
+          <div className="text-sm text-gray-500">Waiting for backend events to populate the map.</div>
+        ) : (
+          attacks.map((attack) => (
+            <div key={attack.id} className="flex items-center justify-between text-sm">
+              <div className="flex items-center gap-2">
+                <div
+                  className="size-2 rounded-full"
+                  style={{ backgroundColor: getSeverityColor(attack.severity) }}
+                />
+                <span className="text-gray-300">{attack.country}</span>
+              </div>
+              <span className="font-mono text-gray-400">{attack.count.toLocaleString()}</span>
             </div>
-            <span className="font-mono text-gray-400">{attack.count.toLocaleString()}</span>
-          </div>
-        ))}
+          ))
+        )}
       </div>
     </div>
   );

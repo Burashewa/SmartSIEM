@@ -1,16 +1,33 @@
-# Local Kafka for SmartSIEM-Collector + detection-worker (.env KAFKA_BROKERS=localhost:9092).
-# When Docker is working: from this folder run:
-#   docker compose -f docker-compose.kafka.yml up -d
-# Wait until Kafka is up, then: npm run dev
+# FROM python:3.13-slim
+
+# # System deps for confluent-kafka
+# RUN apt-get update && apt-get install -y --no-install-recommends \
+#     librdkafka-dev \
+#     build-essential \
+#     && rm -rf /var/lib/apt/lists/*
+
+# WORKDIR /app
+
+# # Install Python dependencies
+# COPY requirements.txt .
+# RUN pip install --no-cache-dir -r requirements.txt
+
+# # Copy collector source
+# COPY . .
+
+# EXPOSE 8080
+
+# # Map Render PORT -> app HTTP_PORT at runtime
+# CMD ["sh", "-c", "HTTP_PORT=${PORT:-8080} python main.py"]
 
 services:
   zookeeper:
     image: confluentinc/cp-zookeeper:7.5.0
+    ports:
+      - "2181:2181"
     environment:
       ZOOKEEPER_CLIENT_PORT: 2181
       ZOOKEEPER_TICK_TIME: 2000
-    ports:
-      - "2181:2181"
 
   kafka:
     image: confluentinc/cp-kafka:7.5.0
@@ -28,3 +45,4 @@ services:
       KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 1
       KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 1
       KAFKA_GROUP_INITIAL_REBALANCE_DELAY_MS: 0
+    restart: unless-stopped

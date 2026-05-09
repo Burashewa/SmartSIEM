@@ -1,11 +1,33 @@
 import { useState, useEffect, useRef } from 'react';
 import { Terminal, AlertCircle, Shield, Activity } from 'lucide-react';
+import { fetchLogs, type LogEventDoc } from '@/lib/smartsiemApi';
 
 export interface LogEvent {
   id: string;
   timestamp: string;
   type: 'info' | 'warning' | 'critical' | 'success';
   message: string;
+}
+
+type StreamableLog = Pick<LogEventDoc, 'event_id' | 'timestamp' | 'event_type' | 'source_ip' | 'host' | 'user_id' | 'raw_data' | 'severity'>;
+
+function mapLogType(log: StreamableLog): LogEvent['type'] {
+  const severity = String(log.severity || '').toLowerCase();
+  if (severity.includes('critical') || severity.includes('high')) return 'critical';
+  if (severity.includes('medium') || /fail|error|denied|blocked|suspicious/i.test(String(log.event_type || '') + ' ' + String(log.raw_data?.message || ''))) return 'warning';
+  if (severity.includes('low') || /success|completed|ok|updated/i.test(String(log.event_type || '') + ' ' + String(log.raw_data?.message || ''))) return 'success';
+  return 'info';
+}
+
+function logMessage(log: StreamableLog): string {
+  const pieces: string[] = [];
+  if (log.event_type) pieces.push(log.event_type);
+  if (log.source_ip) pieces.push(`src=${log.source_ip}`);
+  if (log.host) pieces.push(`host=${log.host}`);
+  if (log.user_id) pieces.push(`user=${log.user_id}`);
+  const rawMessage = typeof log.raw_data?.message === 'string' ? log.raw_data.message : '';
+  if (rawMessage) pieces.push(rawMessage);
+  return pieces.length > 0 ? pieces.join(' · ') : 'Live log event received';
 }
 
 const eventTemplates = [
@@ -28,7 +50,48 @@ interface TerminalStreamProps {
 
 export function TerminalStream({ priorityEvents = [] }: TerminalStreamProps) {
   const [events, setEvents] = useState<LogEvent[]>([]);
+  const [backendEvents, setBackendEvents] = useState<LogEvent[]>([]);
+  const [hasBackendEvents, setHasBackendEvents] = useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    let mounted = true;
+
+    async function loadBackendLogs() {
+      try {
+        const response = await fetchLogs({ limit: 12 });
+        const mapped = response.items
+          .map((item, index) => ({
+            id: item.event_id || `${item.timestamp}-${index}`,
+            timestamp: item.timestamp
+              ? new Date(item.timestamp).toLocaleTimeString('en-US', { hour12: false })
+              : new Date().toLocaleTimeString('en-US', { hour12: false }),
+            type: mapLogType(item),
+            message: logMessage(item),
+          }))
+          .filter((event): event is LogEvent => Boolean(event.message));
+
+        if (mounted) {
+          setBackendEvents(mapped);
+          setHasBackendEvents(mapped.length > 0);
+        }
+      } catch {
+        if (mounted) {
+          setHasBackendEvents(false);
+        }
+      }
+    }
+
+    void loadBackendLogs();
+    const interval = window.setInterval(() => {
+      void loadBackendLogs();
+    }, 5000);
+
+    return () => {
+      mounted = false;
+      window.clearInterval(interval);
+    };
+  }, []);
 
   useEffect(() => {
     const interval = setInterval(() => {
@@ -54,13 +117,13 @@ export function TerminalStream({ priorityEvents = [] }: TerminalStreamProps) {
     return () => clearInterval(interval);
   }, [priorityEvents.length]);
 
-  const displayEvents = [...priorityEvents, ...events].slice(0, 50);
+  const displayEvents = [...priorityEvents, ...backendEvents, ...events].slice(0, 50);
 
   useEffect(() => {
     if (scrollRef.current) {
       scrollRef.current.scrollTop = 0;
     }
-  }, [events, priorityEvents]);
+  }, [events, backendEvents, priorityEvents]);
 
   const getEventIcon = (type: string) => {
     switch (type) {
@@ -86,7 +149,9 @@ export function TerminalStream({ priorityEvents = [] }: TerminalStreamProps) {
         <div>
           <h3 className="text-lg font-medium text-white">Live Event Stream</h3>
           <p className="text-sm text-gray-400 mt-1">
-            {priorityEvents.length > 0
+            {hasBackendEvents
+              ? 'Showing live backend log events from the detection worker.'
+              : priorityEvents.length > 0
               ? 'Collector + detection-worker status (top); simulated SOC traffic below'
               : 'Simulated events — start backends and dev server to see live status'}
           </p>

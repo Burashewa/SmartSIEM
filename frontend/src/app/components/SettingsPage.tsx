@@ -1,528 +1,595 @@
-import { useState } from 'react';
-import { Settings as SettingsIcon, Server, Wifi, WifiOff, Key, Database, Clock, Save, Plus, Edit2, Trash2, RefreshCw, CheckCircle2, AlertTriangle, Copy, Eye, EyeOff, Shield } from 'lucide-react';
+import { useCallback, useEffect, useState } from 'react';
+import { useLocation } from 'react-router-dom';
+import {
+  Settings as SettingsIcon,
+  Server,
+  Key,
+  RefreshCw,
+  Trash2,
+  Plus,
+  Copy,
+  Eye,
+  EyeOff,
+  Activity,
+  User,
+} from 'lucide-react';
+import { useAuth } from '@/app/auth/AuthContext';
+import * as authApi from '@/lib/collectorAuthApi';
+import {
+  fetchCollectorHealth,
+  fetchCollectorMetrics,
+  fetchWorkerHealth,
+  fetchWorkerStats,
+  type CollectorHealth,
+  type CollectorMetrics,
+  type WorkerHealth,
+  type WorkerStats,
+} from '@/lib/smartsiemApi';
 
-interface LogCollector {
+type AgentRow = {
   id: string;
   name: string;
-  type: 'web-server' | 'network-device' | 'database' | 'firewall' | 'endpoint';
-  sourceIp: string;
-  status: 'connected' | 'disconnected' | 'error';
-  lastSeen: string;
-  logsReceived: number;
-  location: string;
-}
+  created_at: string;
+  last_used_at?: string | null;
+  key_stored?: boolean;
+};
 
-interface APIKey {
-  id: string;
-  name: string;
-  key: string;
-  created: string;
-  lastUsed: string;
-  permissions: string[];
-}
-
-const logCollectors: LogCollector[] = [
-  {
-    id: 'col-001',
-    name: 'Production Web Server 01',
-    type: 'web-server',
-    sourceIp: '192.168.1.10',
-    status: 'connected',
-    lastSeen: '2026-03-04T14:23:00Z',
-    logsReceived: 145832,
-    location: 'US-East-1',
-  },
-  {
-    id: 'col-002',
-    name: 'Production Web Server 02',
-    type: 'web-server',
-    sourceIp: '192.168.1.11',
-    status: 'connected',
-    lastSeen: '2026-03-04T14:22:45Z',
-    logsReceived: 138924,
-    location: 'US-East-1',
-  },
-  {
-    id: 'col-003',
-    name: 'Core Router 01',
-    type: 'network-device',
-    sourceIp: '10.0.0.1',
-    status: 'connected',
-    lastSeen: '2026-03-04T14:23:10Z',
-    logsReceived: 892445,
-    location: 'Data Center A',
-  },
-  {
-    id: 'col-004',
-    name: 'Perimeter Firewall',
-    type: 'firewall',
-    sourceIp: '203.0.113.1',
-    status: 'connected',
-    lastSeen: '2026-03-04T14:23:05Z',
-    logsReceived: 524789,
-    location: 'DMZ',
-  },
-  {
-    id: 'col-005',
-    name: 'Edge Switch 05',
-    type: 'network-device',
-    sourceIp: '10.0.5.254',
-    status: 'error',
-    lastSeen: '2026-03-04T12:45:30Z',
-    logsReceived: 45621,
-    location: 'Building B',
-  },
-  {
-    id: 'col-006',
-    name: 'Database Server Primary',
-    type: 'database',
-    sourceIp: '172.16.0.10',
-    status: 'connected',
-    lastSeen: '2026-03-04T14:22:55Z',
-    logsReceived: 67234,
-    location: 'Data Center A',
-  },
-  {
-    id: 'col-007',
-    name: 'VPN Gateway',
-    type: 'network-device',
-    sourceIp: '203.0.113.50',
-    status: 'disconnected',
-    lastSeen: '2026-03-04T08:15:22Z',
-    logsReceived: 23456,
-    location: 'Remote Office',
-  },
-  {
-    id: 'col-008',
-    name: 'Endpoint Security Agent',
-    type: 'endpoint',
-    sourceIp: '192.168.10.0/24',
-    status: 'connected',
-    lastSeen: '2026-03-04T14:23:12Z',
-    logsReceived: 312456,
-    location: 'Corporate Network',
-  },
-];
-
-const initialAPIKeys: APIKey[] = [
-  {
-    id: 'key-001',
-    name: 'Production Log Ingestion',
-    key: 'siem_prod_7f8a9b2c4d6e1f3a5b7c9d2e4f6a8b1c',
-    created: '2026-01-15T10:00:00Z',
-    lastUsed: '2026-03-04T14:20:00Z',
-    permissions: ['log:write', 'log:read'],
-  },
-  {
-    id: 'key-002',
-    name: 'Development Environment',
-    key: 'siem_dev_1a2b3c4d5e6f7a8b9c0d1e2f3a4b5c6d',
-    created: '2026-02-01T09:30:00Z',
-    lastUsed: '2026-03-03T16:45:00Z',
-    permissions: ['log:write', 'log:read', 'alert:read'],
-  },
-  {
-    id: 'key-003',
-    name: 'Monitoring Dashboard',
-    key: 'siem_monitor_9f8e7d6c5b4a3f2e1d0c9b8a7f6e5d4c',
-    created: '2026-01-20T14:15:00Z',
-    lastUsed: '2026-03-04T14:15:30Z',
-    permissions: ['log:read', 'alert:read', 'dashboard:read'],
-  },
-];
+const POLL_MS = 10_000;
 
 export function SettingsPage() {
-  const [collectors, setCollectors] = useState(logCollectors);
-  const [apiKeys, setAPIKeys] = useState(initialAPIKeys);
-  const [retentionDays, setRetentionDays] = useState(90);
-  const [archiveEnabled, setArchiveEnabled] = useState(true);
-  const [compressionEnabled, setCompressionEnabled] = useState(true);
-  const [showNewCollectorForm, setShowNewCollectorForm] = useState(false);
+  const { state } = useAuth();
+  const [agents, setAgents] = useState<AgentRow[]>([]);
+  const [agentsError, setAgentsError] = useState<string | null>(null);
+  const [newAgentName, setNewAgentName] = useState('');
+  const [newAgentStore, setNewAgentStore] = useState(false);
+  const [createdAgentKeys, setCreatedAgentKeys] = useState<Record<string, string>>({});
+  const [lastCreatedAgentId, setLastCreatedAgentId] = useState<string | null>(null);
   const [showNewAPIKeyForm, setShowNewAPIKeyForm] = useState(false);
   const [visibleKeys, setVisibleKeys] = useState<Set<string>>(new Set());
-  const [testingConnection, setTestingConnection] = useState<string | null>(null);
+  const [revealingId, setRevealingId] = useState<string | null>(null);
 
-  const getStatusColor = (status: string) => {
-    switch (status) {
-      case 'connected':
-        return 'text-[#10b981] bg-[#10b981]/20 border-[#10b981]/30';
-      case 'disconnected':
-        return 'text-gray-400 bg-gray-700/20 border-gray-700/30';
-      case 'error':
-        return 'text-[#ef4444] bg-[#ef4444]/20 border-[#ef4444]/30';
-      default:
-        return 'text-gray-400 bg-gray-700/20 border-gray-700/30';
-    }
-  };
+  const [userProfile, setUserProfile] = useState<authApi.UserPublic | null>(null);
+  const [userError, setUserError] = useState<string | null>(null);
 
-  const getStatusIcon = (status: string) => {
-    switch (status) {
-      case 'connected':
-        return <Wifi className="size-4" />;
-      case 'disconnected':
-        return <WifiOff className="size-4" />;
-      case 'error':
-        return <AlertTriangle className="size-4" />;
-      default:
-        return <WifiOff className="size-4" />;
-    }
-  };
+  const [collectorHealth, setCollectorHealth] = useState<CollectorHealth | null>(null);
+  const [collectorMetrics, setCollectorMetrics] = useState<CollectorMetrics | null>(null);
+  const [workerHealth, setWorkerHealth] = useState<WorkerHealth | null>(null);
+  const [workerStats, setWorkerStats] = useState<WorkerStats | null>(null);
+  const [pipelineError, setPipelineError] = useState<string | null>(null);
+  const [pipelineLoading, setPipelineLoading] = useState(false);
 
-  const getTypeIcon = (type: string) => {
-    switch (type) {
-      case 'web-server':
-        return <Server className="size-5 text-[#3b82f6]" />;
-      case 'network-device':
-        return <Wifi className="size-5 text-[#10b981]" />;
-      case 'database':
-        return <Database className="size-5 text-[#8b5cf6]" />;
-      case 'firewall':
-        return <Shield className="size-5 text-[#ef4444]" />;
-      case 'endpoint':
-        return <Server className="size-5 text-[#f59e0b]" />;
-      default:
-        return <Server className="size-5 text-gray-400" />;
-    }
-  };
+  const accessToken = state.status === 'authenticated' ? state.accessToken : null;
 
-  const testConnection = (collectorId: string) => {
-    setTestingConnection(collectorId);
-    setTimeout(() => {
-      setTestingConnection(null);
-      // Simulate connection test result
-    }, 2000);
-  };
+  const location = useLocation();
 
-  const toggleKeyVisibility = (keyId: string) => {
-    setVisibleKeys(prev => {
-      const newSet = new Set(prev);
-      if (newSet.has(keyId)) {
-        newSet.delete(keyId);
-      } else {
-        newSet.add(keyId);
+  const refreshPipeline = useCallback(async () => {
+    setPipelineLoading(true);
+    setPipelineError(null);
+    try {
+      const [ch, cm, wh, ws] = await Promise.all([
+        fetchCollectorHealth(),
+        fetchCollectorMetrics(),
+        fetchWorkerHealth(),
+        fetchWorkerStats(),
+      ]);
+      setCollectorHealth(ch);
+      setCollectorMetrics(cm);
+      setWorkerHealth(wh);
+      setWorkerStats(ws);
+      const any = ch !== null || cm !== null || wh !== null || ws !== null;
+      if (!any) {
+        setPipelineError(
+          'Could not reach collector or detection-worker. Start both services and ensure the Vite dev proxy targets the correct ports (collector 8080, worker 4000).'
+        );
       }
-      return newSet;
+    } catch (e) {
+      setPipelineError(e instanceof Error ? e.message : 'Failed to load pipeline status');
+    } finally {
+      setPipelineLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    void refreshPipeline();
+    const t = window.setInterval(() => void refreshPipeline(), POLL_MS);
+    return () => window.clearInterval(t);
+  }, [refreshPipeline]);
+
+  useEffect(() => {
+    const params = new URLSearchParams(location.search);
+    const createParam = params.get('createAgent') || params.get('create');
+    if (createParam === '1' || createParam === 'true') {
+      setShowNewAPIKeyForm(true);
+    }
+  }, [location.search]);
+
+  useEffect(() => {
+    let cancelled = false;
+    async function loadAgents() {
+      setAgentsError(null);
+      if (!accessToken) {
+        setAgents([]);
+        return;
+      }
+      try {
+        const list = await authApi.listAgents(accessToken);
+        if (cancelled) return;
+        setAgents(list);
+      } catch (e: unknown) {
+        if (cancelled) return;
+        setAgentsError(e instanceof Error ? e.message : 'Failed to load agents');
+      }
+    }
+    void loadAgents();
+    return () => {
+      cancelled = true;
+    };
+  }, [accessToken]);
+
+  useEffect(() => {
+    let cancelled = false;
+    async function loadUser() {
+      setUserError(null);
+      if (!accessToken) {
+        setUserProfile(null);
+        return;
+      }
+      try {
+        const me = await authApi.fetchMe(accessToken);
+        if (cancelled) return;
+        setUserProfile(me);
+      } catch (e: unknown) {
+        if (cancelled) return;
+        setUserError(e instanceof Error ? e.message : 'Failed to load profile');
+      }
+    }
+    void loadUser();
+    return () => {
+      cancelled = true;
+    };
+  }, [accessToken]);
+
+  const copyToClipboard = (text: string) => {
+    void navigator.clipboard.writeText(text);
+  };
+
+  const keyForAgent = (agentId: string) => createdAgentKeys[agentId] ?? null;
+
+  const toggleKeyVisibility = (agentId: string) => {
+    setVisibleKeys((prev) => {
+      const next = new Set(prev);
+      if (next.has(agentId)) next.delete(agentId);
+      else next.add(agentId);
+      return next;
     });
   };
 
-  const copyToClipboard = (text: string) => {
-    navigator.clipboard.writeText(text);
-  };
-
-  const maskAPIKey = (key: string) => {
-    return key.substring(0, 15) + '•'.repeat(20);
-  };
-
-  const connectedCount = collectors.filter(c => c.status === 'connected').length;
-  const disconnectedCount = collectors.filter(c => c.status === 'disconnected').length;
-  const errorCount = collectors.filter(c => c.status === 'error').length;
-
   return (
     <div className="space-y-6">
-      {/* Header */}
-      <div className="flex items-center justify-between">
+      <div className="flex flex-wrap items-center justify-between gap-4">
         <div>
-          <h1 className="text-3xl text-white mb-2">System Settings</h1>
+          <h1 className="text-3xl text-white mb-2">Settings</h1>
           <p className="text-gray-400">
-            Configure data sources, API keys, and system parameters
+            Account, pipeline status, and ingest agents — all data comes from the collector and
+            detection-worker APIs.
           </p>
         </div>
         <div className="flex items-center gap-2 px-4 py-2 bg-[#4f46e5]/20 border border-[#4f46e5]/30 rounded">
           <SettingsIcon className="size-5 text-[#4f46e5]" />
-          <span className="text-sm text-[#4f46e5] font-medium">System Configuration</span>
+          <span className="text-sm text-[#4f46e5] font-medium">Live backend</span>
         </div>
       </div>
 
-      {/* Log Collector Status */}
-      <div className="bg-[#0f0f17] border border-[#1f1f2e] rounded-lg p-6 space-y-6">
-        <div className="flex items-center justify-between">
-          <div>
-            <h2 className="text-xl text-white mb-2 flex items-center gap-2">
-              <Server className="size-5 text-[#4f46e5]" />
-              Log Collector Status
-            </h2>
-            <p className="text-sm text-gray-400">
-              Monitor external systems and data source connections
-            </p>
-          </div>
+      {/* Account — GET /auth/me */}
+      <div className="bg-[#0f0f17] border border-[#1f1f2e] rounded-lg p-6 space-y-4">
+        <h2 className="text-xl text-white flex items-center gap-2">
+          <User className="size-5 text-[#4f46e5]" />
+          Account
+        </h2>
+        {!accessToken && (
+          <p className="text-sm text-gray-400">
+            Sign in to load your profile and manage ingest agents.
+          </p>
+        )}
+        {userError && <p className="text-sm text-amber-400">{userError}</p>}
+        {accessToken && userProfile && (
+          <dl className="grid grid-cols-1 sm:grid-cols-2 gap-4 text-sm">
+            <div>
+              <dt className="text-gray-500 mb-1">Email</dt>
+              <dd className="text-white font-mono">{userProfile.email}</dd>
+            </div>
+            <div>
+              <dt className="text-gray-500 mb-1">User ID</dt>
+              <dd className="text-white font-mono break-all">{userProfile.id}</dd>
+            </div>
+            {userProfile.display_name != null && userProfile.display_name !== '' && (
+              <div className="sm:col-span-2">
+                <dt className="text-gray-500 mb-1">Display name</dt>
+                <dd className="text-white">{userProfile.display_name}</dd>
+              </div>
+            )}
+          </dl>
+        )}
+      </div>
+
+      {/* Pipeline — collector + worker */}
+      <div className="bg-[#0f0f17] border border-[#1f1f2e] rounded-lg p-6 space-y-4">
+        <div className="flex items-center justify-between flex-wrap gap-3">
+          <h2 className="text-xl text-white flex items-center gap-2">
+            <Activity className="size-5 text-[#4f46e5]" />
+            Pipeline status
+          </h2>
           <button
-            onClick={() => setShowNewCollectorForm(!showNewCollectorForm)}
-            className="flex items-center gap-2 px-4 py-2 bg-[#4f46e5] hover:bg-[#6366f1] text-white rounded transition-colors text-sm font-medium"
+            type="button"
+            onClick={() => void refreshPipeline()}
+            disabled={pipelineLoading}
+            className="flex items-center gap-2 px-3 py-2 text-sm text-gray-300 bg-[#1a1a24] border border-[#2a2a3a] hover:border-[#4f46e5] disabled:opacity-50"
           >
-            <Plus className="size-4" />
-            Add Collector
+            <RefreshCw className={`size-4 ${pipelineLoading ? 'animate-spin' : ''}`} />
+            Refresh
           </button>
         </div>
+        {pipelineError && <p className="text-sm text-amber-400">{pipelineError}</p>}
 
-        {/* Status Summary */}
-        <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-          <div className="bg-[#0a0a0f] border border-[#1f1f2e] rounded-lg p-4">
-            <div className="flex items-center justify-between mb-2">
-              <span className="text-sm text-gray-400">Total Collectors</span>
-              <Server className="size-4 text-[#4f46e5]" />
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+          <div className="bg-[#0a0a0f] border border-[#1f1f2e] rounded-lg p-4 space-y-3">
+            <div className="flex items-center gap-2 text-white font-medium">
+              <Server className="size-4 text-[#6366f1]" />
+              SmartSIEM-Collector
             </div>
-            <p className="text-2xl text-white font-bold">{collectors.length}</p>
+            <div className="text-sm space-y-1 text-gray-400">
+              <p>
+                <span className="text-gray-500">HTTP /health:</span>{' '}
+                <span className={collectorHealth?.status === 'ok' ? 'text-[#10b981]' : 'text-amber-400'}>
+                  {collectorHealth ? collectorHealth.status : 'no response'}
+                </span>
+              </p>
+              {collectorMetrics && (
+                <>
+                  <p>
+                    <span className="text-gray-500">Output:</span>{' '}
+                    <span className="text-white font-mono">{collectorMetrics.queue_output}</span>
+                  </p>
+                  <p>
+                    <span className="text-gray-500">Kafka topic:</span>{' '}
+                    <span className="text-white font-mono">{collectorMetrics.kafka_topic}</span>
+                  </p>
+                  <p>
+                    <span className="text-gray-500">Ingest auth required:</span>{' '}
+                    <span className="text-white">{String(collectorMetrics.require_ingest_auth)}</span>
+                  </p>
+                  <p>
+                    <span className="text-gray-500">Events accepted (process):</span>{' '}
+                    <span className="text-white">
+                      {(collectorMetrics.counters?.events_total ?? 0).toLocaleString()}
+                    </span>
+                  </p>
+                  <p>
+                    <span className="text-gray-500">HTTP requests:</span>{' '}
+                    <span className="text-white">
+                      {(collectorMetrics.counters?.requests_total ?? 0).toLocaleString()}
+                    </span>
+                  </p>
+                  <p>
+                    <span className="text-gray-500">Uptime (s):</span>{' '}
+                    <span className="text-white">
+                      {Math.floor(collectorMetrics.uptime_seconds ?? 0).toLocaleString()}
+                    </span>
+                  </p>
+                </>
+              )}
+              {!collectorMetrics && collectorHealth && (
+                <p className="text-xs">/metrics unavailable or collector older build.</p>
+              )}
+            </div>
           </div>
-          <div className="bg-[#0a0a0f] border border-[#10b981]/30 rounded-lg p-4">
-            <div className="flex items-center justify-between mb-2">
-              <span className="text-sm text-gray-400">Connected</span>
-              <Wifi className="size-4 text-[#10b981]" />
+
+          <div className="bg-[#0a0a0f] border border-[#1f1f2e] rounded-lg p-4 space-y-3">
+            <div className="flex items-center gap-2 text-white font-medium">
+              <Activity className="size-4 text-[#10b981]" />
+              Detection-worker
             </div>
-            <p className="text-2xl text-[#10b981] font-bold">{connectedCount}</p>
-          </div>
-          <div className="bg-[#0a0a0f] border border-gray-700/30 rounded-lg p-4">
-            <div className="flex items-center justify-between mb-2">
-              <span className="text-sm text-gray-400">Disconnected</span>
-              <WifiOff className="size-4 text-gray-400" />
+            <div className="text-sm space-y-1 text-gray-400">
+              <p>
+                <span className="text-gray-500">/health status:</span>{' '}
+                <span className={workerHealth?.status === 'ok' ? 'text-[#10b981]' : 'text-amber-400'}>
+                  {workerHealth?.status ?? 'no response'}
+                </span>
+              </p>
+              {workerHealth && (
+                <>
+                  <p>
+                    <span className="text-gray-500">MongoDB:</span>{' '}
+                    <span className={workerHealth.mongodb?.connected ? 'text-[#10b981]' : 'text-amber-400'}>
+                      {workerHealth.mongodb?.connected ? 'connected' : 'not connected'}
+                    </span>
+                  </p>
+                  <p>
+                    <span className="text-gray-500">Health uptime (s):</span>{' '}
+                    <span className="text-white">
+                      {Math.floor(workerHealth.uptime ?? 0).toLocaleString()}
+                    </span>
+                  </p>
+                </>
+              )}
+              {workerStats && (
+                <>
+                  <p>
+                    <span className="text-gray-500">Events processed:</span>{' '}
+                    <span className="text-white">{workerStats.totalEventsProcessed.toLocaleString()}</span>
+                  </p>
+                  <p>
+                    <span className="text-gray-500">Alerts generated:</span>{' '}
+                    <span className="text-white">{workerStats.totalAlertsGenerated.toLocaleString()}</span>
+                  </p>
+                  <p>
+                    <span className="text-gray-500">Active rules (in memory):</span>{' '}
+                    <span className="text-white">{workerStats.activeRules}</span>
+                  </p>
+                  <p>
+                    <span className="text-gray-500">/stats uptime (s):</span>{' '}
+                    <span className="text-white">{Math.floor(workerStats.uptime).toLocaleString()}</span>
+                  </p>
+                </>
+              )}
             </div>
-            <p className="text-2xl text-gray-400 font-bold">{disconnectedCount}</p>
-          </div>
-          <div className="bg-[#0a0a0f] border border-[#ef4444]/30 rounded-lg p-4">
-            <div className="flex items-center justify-between mb-2">
-              <span className="text-sm text-gray-400">Errors</span>
-              <AlertTriangle className="size-4 text-[#ef4444]" />
-            </div>
-            <p className="text-2xl text-[#ef4444] font-bold">{errorCount}</p>
           </div>
         </div>
+      </div>
 
-        {/* Collectors List */}
-        <div className="space-y-3">
-          {collectors.map((collector) => (
-            <div
-              key={collector.id}
-              className="bg-[#0a0a0f] border border-[#1f1f2e] rounded-lg p-4 hover:border-[#2a2a3a] transition-colors"
+      {/* Agents — collector /agents */}
+      <div className="bg-[#0f0f17] border border-[#1f1f2e] rounded-lg p-6 space-y-6">
+        <div className="flex items-center justify-between flex-wrap gap-3">
+          <div>
+            <h2 className="text-xl text-white mb-2 flex items-center gap-2">
+              <Key className="size-5 text-[#4f46e5]" />
+              Ingest agents (API keys)
+            </h2>
+            <p className="text-sm text-gray-400">
+              Create agents on the collector; use the API key in the <code className="text-gray-300">Authorization</code> or{' '}
+              <code className="text-gray-300">X-API-Key</code> header when <code className="text-gray-300">require_ingest_auth</code> is enabled.
+            </p>
+          </div>
+          {accessToken && (
+            <button
+              type="button"
+              onClick={() => setShowNewAPIKeyForm(!showNewAPIKeyForm)}
+              className="flex items-center gap-2 px-4 py-2 bg-[#4f46e5] hover:bg-[#6366f1] text-white rounded transition-colors text-sm font-medium"
             >
-              <div className="flex items-center justify-between">
-                <div className="flex items-center gap-4 flex-1">
-                  <div className="p-2 bg-[#1a1a24] rounded">
-                    {getTypeIcon(collector.type)}
-                  </div>
-                  <div className="flex-1">
-                    <div className="flex items-center gap-3 mb-1">
-                      <h3 className="text-white font-medium">{collector.name}</h3>
-                      <span className={`flex items-center gap-1.5 text-xs px-2.5 py-1 border rounded ${getStatusColor(collector.status)}`}>
-                        {getStatusIcon(collector.status)}
-                        {collector.status.toUpperCase()}
+              <Plus className="size-4" />
+              Create agent
+            </button>
+          )}
+        </div>
+
+        {!accessToken && (
+          <p className="text-sm text-gray-400">Sign in to list and create agents.</p>
+        )}
+
+        <div className="space-y-3">
+          {agentsError && <div className="text-sm text-[#ef4444]">{agentsError}</div>}
+          {accessToken && agents.length === 0 && !agentsError && (
+            <p className="text-sm text-gray-500">No agents yet. Create one to get an API key.</p>
+          )}
+          {agents.map((agent) => {
+            const rawKey = keyForAgent(agent.id);
+            const keyVisible = Boolean(rawKey && visibleKeys.has(agent.id));
+            const isStored = Boolean(agent.key_stored);
+            const keyDisplay = keyVisible
+              ? rawKey
+              : rawKey
+                ? '•'.repeat(32)
+                : isStored
+                  ? 'Stored encrypted on server — click Reveal to retrieve'
+                  : 'One-time key — only shown once at creation';
+            const isRevealing = revealingId === agent.id;
+            return (
+              <div
+                key={agent.id}
+                className="bg-[#0a0a0f] border border-[#1f1f2e] rounded-lg p-4 hover:border-[#2a2a3a] transition-colors"
+              >
+                <div className="flex items-start justify-between mb-3 gap-3">
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center gap-2 mb-2 flex-wrap">
+                      <h3 className="text-white font-medium">{agent.name}</h3>
+                      <span
+                        className={
+                          isStored
+                            ? 'text-[10px] uppercase tracking-wide px-2 py-0.5 rounded border border-[#4f46e5]/40 bg-[#4f46e5]/10 text-[#a5b4fc]'
+                            : 'text-[10px] uppercase tracking-wide px-2 py-0.5 rounded border border-[#2a2a3a] bg-[#1a1a24] text-gray-400'
+                        }
+                        title={
+                          isStored
+                            ? 'Plaintext key is encrypted at rest and can be retrieved by you.'
+                            : 'Plaintext was returned once at creation and never persisted.'
+                        }
+                      >
+                        {isStored ? 'Stored (encrypted)' : 'One-time'}
                       </span>
                     </div>
-                    <div className="flex items-center gap-4 text-sm text-gray-400">
-                      <span className="flex items-center gap-1.5 font-mono">
-                        <Wifi className="size-3" />
-                        {collector.sourceIp}
-                      </span>
-                      <span>•</span>
-                      <span>{collector.location}</span>
-                      <span>•</span>
-                      <span>{collector.logsReceived.toLocaleString()} logs</span>
-                      <span>•</span>
-                      <span className="text-xs">
-                        Last seen: {new Date(collector.lastSeen).toLocaleString()}
+                    <div className="flex items-center gap-2 mb-3 flex-wrap">
+                      <code className="flex-1 min-w-0 bg-[#1a1a24] border border-[#2a2a3a] px-3 py-2 text-sm text-gray-300 font-mono rounded break-all">
+                        {keyDisplay}
+                      </code>
+                      {rawKey && (
+                        <>
+                          <button
+                            type="button"
+                            onClick={() => toggleKeyVisibility(agent.id)}
+                            className="p-2 text-gray-400 hover:text-white hover:bg-[#1a1a24] rounded transition-colors shrink-0"
+                            title={keyVisible ? 'Hide key' : 'Show key'}
+                          >
+                            {keyVisible ? <EyeOff className="size-4" /> : <Eye className="size-4" />}
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => copyToClipboard(rawKey)}
+                            className="p-2 text-gray-400 hover:text-white hover:bg-[#1a1a24] rounded transition-colors shrink-0"
+                            title="Copy key"
+                          >
+                            <Copy className="size-4" />
+                          </button>
+                        </>
+                      )}
+                      {!rawKey && isStored && accessToken && (
+                        <button
+                          type="button"
+                          disabled={isRevealing}
+                          onClick={async () => {
+                            setRevealingId(agent.id);
+                            setAgentsError(null);
+                            try {
+                              const res = await authApi.revealAgentKey(accessToken, agent.id);
+                              setCreatedAgentKeys((prev) => ({ ...prev, [agent.id]: res.api_key }));
+                              setVisibleKeys((prev) => {
+                                const next = new Set(prev);
+                                next.add(agent.id);
+                                return next;
+                              });
+                            } catch (e: unknown) {
+                              setAgentsError(e instanceof Error ? e.message : 'Reveal failed');
+                            } finally {
+                              setRevealingId((cur) => (cur === agent.id ? null : cur));
+                            }
+                          }}
+                          className="px-3 py-1.5 text-xs bg-[#1a1a24] border border-[#4f46e5]/40 text-[#a5b4fc] hover:bg-[#4f46e5]/15 rounded shrink-0 disabled:opacity-50"
+                          title="Decrypt and show plaintext key"
+                        >
+                          {isRevealing ? 'Revealing…' : 'Reveal'}
+                        </button>
+                      )}
+                    </div>
+                    <div className="flex items-center gap-4 text-xs text-gray-400 flex-wrap">
+                      <span>Created: {new Date(agent.created_at).toLocaleString()}</span>
+                      <span>·</span>
+                      <span>
+                        Last used:{' '}
+                        {agent.last_used_at ? new Date(agent.last_used_at).toLocaleString() : 'Never'}
                       </span>
                     </div>
                   </div>
-                </div>
-                <div className="flex items-center gap-2">
                   <button
-                    onClick={() => testConnection(collector.id)}
-                    disabled={testingConnection === collector.id}
-                    className="p-2 text-gray-400 hover:text-white hover:bg-[#1a1a24] rounded transition-colors disabled:opacity-50"
-                    title="Test Connection"
-                  >
-                    <RefreshCw className={`size-4 ${testingConnection === collector.id ? 'animate-spin' : ''}`} />
-                  </button>
-                  <button
-                    className="p-2 text-gray-400 hover:text-white hover:bg-[#1a1a24] rounded transition-colors"
-                    title="Edit"
-                  >
-                    <Edit2 className="size-4" />
-                  </button>
-                  <button
-                    className="p-2 text-gray-400 hover:text-[#ef4444] hover:bg-[#ef4444]/10 rounded transition-colors"
-                    title="Delete"
+                    type="button"
+                    onClick={async () => {
+                      if (!accessToken) return;
+                      if (!window.confirm(`Delete agent "${agent.name}"? This cannot be undone.`)) return;
+                      try {
+                        await authApi.deleteAgent(accessToken, agent.id);
+                        setAgents((prev) => prev.filter((a) => a.id !== agent.id));
+                        setCreatedAgentKeys((prev) => {
+                          const next = { ...prev };
+                          delete next[agent.id];
+                          return next;
+                        });
+                        setVisibleKeys((prev) => {
+                          const next = new Set(prev);
+                          next.delete(agent.id);
+                          return next;
+                        });
+                      } catch (e: unknown) {
+                        setAgentsError(e instanceof Error ? e.message : 'Delete failed');
+                      }
+                    }}
+                    className="p-2 text-gray-400 hover:text-[#ef4444] hover:bg-[#ef4444]/10 rounded transition-colors shrink-0"
+                    title="Delete agent"
                   >
                     <Trash2 className="size-4" />
                   </button>
                 </div>
+                <p className="text-xs text-gray-500">
+                  {isStored
+                    ? 'Plaintext is encrypted with the collector signing secret. Use Reveal to retrieve it.'
+                    : 'API key is returned only at creation; copy it immediately — it cannot be retrieved later.'}
+                </p>
               </div>
-            </div>
-          ))}
+            );
+          })}
         </div>
 
-        {/* Add New Collector Form */}
-        {showNewCollectorForm && (
+        {showNewAPIKeyForm && accessToken && (
           <div className="bg-[#0a0a0f] border border-[#4f46e5]/30 rounded-lg p-6 space-y-4">
-            <h3 className="text-white font-medium mb-4">Add New Log Collector</h3>
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              <div>
-                <label className="text-sm text-gray-400 mb-2 block">Collector Name</label>
-                <input
-                  type="text"
-                  placeholder="e.g., Production Web Server 03"
-                  className="w-full bg-[#1a1a24] border border-[#2a2a3a] px-4 py-2.5 text-sm text-white placeholder:text-gray-500 focus:outline-none focus:border-[#4f46e5] transition-colors rounded"
-                />
-              </div>
-              <div>
-                <label className="text-sm text-gray-400 mb-2 block">Collector Type</label>
-                <select className="w-full bg-[#1a1a24] border border-[#2a2a3a] px-4 py-2.5 text-sm text-white focus:outline-none focus:border-[#4f46e5] transition-colors rounded">
-                  <option value="web-server">Web Server</option>
-                  <option value="network-device">Network Device</option>
-                  <option value="database">Database</option>
-                  <option value="firewall">Firewall</option>
-                  <option value="endpoint">Endpoint</option>
-                </select>
-              </div>
-              <div>
-                <label className="text-sm text-gray-400 mb-2 block">Source IP Address</label>
-                <input
-                  type="text"
-                  placeholder="e.g., 192.168.1.12"
-                  className="w-full bg-[#1a1a24] border border-[#2a2a3a] px-4 py-2.5 text-sm text-white font-mono placeholder:text-gray-500 focus:outline-none focus:border-[#4f46e5] transition-colors rounded"
-                />
-              </div>
-              <div>
-                <label className="text-sm text-gray-400 mb-2 block">Location</label>
-                <input
-                  type="text"
-                  placeholder="e.g., US-East-1"
-                  className="w-full bg-[#1a1a24] border border-[#2a2a3a] px-4 py-2.5 text-sm text-white placeholder:text-gray-500 focus:outline-none focus:border-[#4f46e5] transition-colors rounded"
-                />
-              </div>
+            <h3 className="text-white font-medium">Create agent</h3>
+            <div>
+              <label className="text-sm text-gray-400 mb-2 block" htmlFor="new-agent-name">
+                Agent name
+              </label>
+              <input
+                id="new-agent-name"
+                type="text"
+                value={newAgentName}
+                onChange={(e) => setNewAgentName(e.target.value)}
+                placeholder="e.g. production-web-01"
+                className="w-full bg-[#1a1a24] border border-[#2a2a3a] px-4 py-2.5 text-sm text-white placeholder:text-gray-500 focus:outline-none focus:border-[#4f46e5] transition-colors rounded"
+              />
             </div>
-            <div className="flex items-center gap-3 pt-2">
-              <button className="px-4 py-2 bg-[#4f46e5] hover:bg-[#6366f1] text-white rounded transition-colors text-sm font-medium">
-                Add Collector
-              </button>
-              <button
-                onClick={() => setShowNewCollectorForm(false)}
-                className="px-4 py-2 bg-[#1a1a24] border border-[#2a2a3a] text-gray-300 hover:text-white rounded transition-colors text-sm"
-              >
-                Cancel
-              </button>
-            </div>
-          </div>
-        )}
-      </div>
-
-      {/* API Key Management */}
-      <div className="bg-[#0f0f17] border border-[#1f1f2e] rounded-lg p-6 space-y-6">
-        <div className="flex items-center justify-between">
-          <div>
-            <h2 className="text-xl text-white mb-2 flex items-center gap-2">
-              <Key className="size-5 text-[#4f46e5]" />
-              API Key Management
-            </h2>
-            <p className="text-sm text-gray-400">
-              Manage API keys for secure log ingestion and system access
-            </p>
-          </div>
-          <button
-            onClick={() => setShowNewAPIKeyForm(!showNewAPIKeyForm)}
-            className="flex items-center gap-2 px-4 py-2 bg-[#4f46e5] hover:bg-[#6366f1] text-white rounded transition-colors text-sm font-medium"
-          >
-            <Plus className="size-4" />
-            Generate API Key
-          </button>
-        </div>
-
-        {/* API Keys List */}
-        <div className="space-y-3">
-          {apiKeys.map((apiKey) => (
-            <div
-              key={apiKey.id}
-              className="bg-[#0a0a0f] border border-[#1f1f2e] rounded-lg p-4 hover:border-[#2a2a3a] transition-colors"
-            >
-              <div className="flex items-start justify-between mb-3">
-                <div className="flex-1">
-                  <h3 className="text-white font-medium mb-2">{apiKey.name}</h3>
-                  <div className="flex items-center gap-2 mb-3">
-                    <code className="flex-1 bg-[#1a1a24] border border-[#2a2a3a] px-3 py-2 text-sm text-gray-300 font-mono rounded">
-                      {visibleKeys.has(apiKey.id) ? apiKey.key : maskAPIKey(apiKey.key)}
-                    </code>
-                    <button
-                      onClick={() => toggleKeyVisibility(apiKey.id)}
-                      className="p-2 text-gray-400 hover:text-white hover:bg-[#1a1a24] rounded transition-colors"
-                      title={visibleKeys.has(apiKey.id) ? 'Hide Key' : 'Show Key'}
-                    >
-                      {visibleKeys.has(apiKey.id) ? <EyeOff className="size-4" /> : <Eye className="size-4" />}
-                    </button>
-                    <button
-                      onClick={() => copyToClipboard(apiKey.key)}
-                      className="p-2 text-gray-400 hover:text-white hover:bg-[#1a1a24] rounded transition-colors"
-                      title="Copy to Clipboard"
-                    >
-                      <Copy className="size-4" />
-                    </button>
-                  </div>
-                  <div className="flex items-center gap-4 text-xs text-gray-400">
-                    <span>Created: {new Date(apiKey.created).toLocaleDateString()}</span>
-                    <span>•</span>
-                    <span>Last used: {new Date(apiKey.lastUsed).toLocaleString()}</span>
-                  </div>
-                </div>
-                <button
-                  className="p-2 text-gray-400 hover:text-[#ef4444] hover:bg-[#ef4444]/10 rounded transition-colors"
-                  title="Revoke Key"
-                >
-                  <Trash2 className="size-4" />
-                </button>
-              </div>
-              <div className="flex items-center gap-2">
-                <span className="text-xs text-gray-400">Permissions:</span>
-                {apiKey.permissions.map((perm) => (
-                  <span
-                    key={perm}
-                    className="text-xs px-2 py-1 bg-[#1a1a24] text-gray-300 border border-[#2a2a3a] rounded"
-                  >
-                    {perm}
+            <fieldset className="space-y-2">
+              <legend className="text-sm text-gray-400 mb-1">Key handling</legend>
+              <label className="flex items-start gap-3 cursor-pointer p-3 rounded border border-[#2a2a3a] hover:border-[#4f46e5]/60 bg-[#0a0a0f]">
+                <input
+                  type="radio"
+                  name="agent-key-storage"
+                  className="mt-1 accent-[#4f46e5]"
+                  checked={!newAgentStore}
+                  onChange={() => setNewAgentStore(false)}
+                />
+                <span className="text-sm">
+                  <span className="text-white font-medium block">One-time (recommended)</span>
+                  <span className="text-gray-400 text-xs">
+                    The plaintext key is shown once at creation and never persisted on the server.
+                    Only its hash is stored; you must copy it now.
                   </span>
-                ))}
-              </div>
-            </div>
-          ))}
-        </div>
-
-        {/* Generate New API Key Form */}
-        {showNewAPIKeyForm && (
-          <div className="bg-[#0a0a0f] border border-[#4f46e5]/30 rounded-lg p-6 space-y-4">
-            <h3 className="text-white font-medium mb-4">Generate New API Key</h3>
-            <div className="space-y-4">
-              <div>
-                <label className="text-sm text-gray-400 mb-2 block">Key Name</label>
+                </span>
+              </label>
+              <label className="flex items-start gap-3 cursor-pointer p-3 rounded border border-[#2a2a3a] hover:border-[#4f46e5]/60 bg-[#0a0a0f]">
                 <input
-                  type="text"
-                  placeholder="e.g., Staging Environment"
-                  className="w-full bg-[#1a1a24] border border-[#2a2a3a] px-4 py-2.5 text-sm text-white placeholder:text-gray-500 focus:outline-none focus:border-[#4f46e5] transition-colors rounded"
+                  type="radio"
+                  name="agent-key-storage"
+                  className="mt-1 accent-[#4f46e5]"
+                  checked={newAgentStore}
+                  onChange={() => setNewAgentStore(true)}
                 />
-              </div>
-              <div>
-                <label className="text-sm text-gray-400 mb-2 block">Permissions</label>
-                <div className="space-y-2">
-                  <label className="flex items-center gap-2 text-sm text-gray-300 cursor-pointer">
-                    <input type="checkbox" className="rounded border-[#2a2a3a]" defaultChecked />
-                    <span>log:write - Write log data</span>
-                  </label>
-                  <label className="flex items-center gap-2 text-sm text-gray-300 cursor-pointer">
-                    <input type="checkbox" className="rounded border-[#2a2a3a]" defaultChecked />
-                    <span>log:read - Read log data</span>
-                  </label>
-                  <label className="flex items-center gap-2 text-sm text-gray-300 cursor-pointer">
-                    <input type="checkbox" className="rounded border-[#2a2a3a]" />
-                    <span>alert:read - Read alerts</span>
-                  </label>
-                  <label className="flex items-center gap-2 text-sm text-gray-300 cursor-pointer">
-                    <input type="checkbox" className="rounded border-[#2a2a3a]" />
-                    <span>dashboard:read - Access dashboards</span>
-                  </label>
-                </div>
-              </div>
-            </div>
-            <div className="flex items-center gap-3 pt-2">
-              <button className="px-4 py-2 bg-[#4f46e5] hover:bg-[#6366f1] text-white rounded transition-colors text-sm font-medium">
-                Generate Key
+                <span className="text-sm">
+                  <span className="text-white font-medium block">Store encrypted on server</span>
+                  <span className="text-gray-400 text-xs">
+                    The collector encrypts the key with its signing secret (Fernet) so you can
+                    retrieve it later via the Reveal button. Rotating the JWT secret invalidates
+                    stored keys.
+                  </span>
+                </span>
+              </label>
+            </fieldset>
+            <div className="flex items-center gap-3 pt-2 flex-wrap">
+              <button
+                type="button"
+                onClick={async () => {
+                  const name = newAgentName.trim();
+                  if (!accessToken || !name) return;
+                  setAgentsError(null);
+                  try {
+                    const res = await authApi.createAgent(accessToken, name, {
+                      storeEncrypted: newAgentStore,
+                    });
+                    setCreatedAgentKeys((prev) => ({ ...prev, [res.agent.id]: res.api_key }));
+                    setLastCreatedAgentId(res.agent.id);
+                    setAgents((prev) => [res.agent, ...prev]);
+                    setVisibleKeys(new Set([res.agent.id]));
+                    setNewAgentName('');
+                    setNewAgentStore(false);
+                    setShowNewAPIKeyForm(false);
+                  } catch (e: unknown) {
+                    setAgentsError(e instanceof Error ? e.message : 'Create failed');
+                  }
+                }}
+                className="px-4 py-2 bg-[#4f46e5] hover:bg-[#6366f1] text-white rounded transition-colors text-sm font-medium"
+              >
+                Create
               </button>
               <button
-                onClick={() => setShowNewAPIKeyForm(false)}
+                type="button"
+                onClick={() => {
+                  setShowNewAPIKeyForm(false);
+                  setNewAgentStore(false);
+                }}
                 className="px-4 py-2 bg-[#1a1a24] border border-[#2a2a3a] text-gray-300 hover:text-white rounded transition-colors text-sm"
               >
                 Cancel
@@ -530,119 +597,38 @@ export function SettingsPage() {
             </div>
           </div>
         )}
-      </div>
 
-      {/* System Configuration */}
-      <div className="bg-[#0f0f17] border border-[#1f1f2e] rounded-lg p-6 space-y-6">
-        <div>
-          <h2 className="text-xl text-white mb-2 flex items-center gap-2">
-            <Database className="size-5 text-[#4f46e5]" />
-            System Configuration
-          </h2>
-          <p className="text-sm text-gray-400">
-            Configure data retention policies and backend service parameters
-          </p>
-        </div>
-
-        {/* Data Retention Policy */}
-        <div className="bg-[#0a0a0f] border border-[#1f1f2e] rounded-lg p-5 space-y-4">
-          <div className="flex items-center gap-2 mb-3">
-            <Clock className="size-5 text-[#4f46e5]" />
-            <h3 className="text-white font-medium">Data Retention Policy</h3>
-          </div>
-          
-          <div>
-            <label className="text-sm text-gray-400 mb-2 block">Log Retention Period (Days)</label>
-            <div className="flex items-center gap-4">
-              <input
-                type="number"
-                value={retentionDays}
-                onChange={(e) => setRetentionDays(parseInt(e.target.value))}
-                min="30"
-                max="365"
-                className="w-32 bg-[#1a1a24] border border-[#2a2a3a] px-4 py-2.5 text-sm text-white focus:outline-none focus:border-[#4f46e5] transition-colors rounded"
-              />
-              <span className="text-sm text-gray-400">
-                Logs older than {retentionDays} days will be automatically archived
-              </span>
+        {lastCreatedAgentId && keyForAgent(lastCreatedAgentId) && (
+          <div className="bg-[#4f46e5]/10 border border-[#4f46e5]/30 rounded p-4">
+            <div className="flex items-start justify-between gap-2 mb-2">
+              <div className="text-xs text-gray-300">
+                {agents.find((a) => a.id === lastCreatedAgentId)?.key_stored
+                  ? 'Latest created API key — also stored encrypted on the server (use Reveal to retrieve later).'
+                  : 'Latest created API key — copy now; it cannot be shown again.'}
+              </div>
+              <button
+                type="button"
+                onClick={() => setLastCreatedAgentId(null)}
+                className="text-xs text-gray-400 hover:text-white shrink-0"
+              >
+                Dismiss
+              </button>
+            </div>
+            <div className="flex items-center gap-2">
+              <code className="flex-1 bg-[#1a1a24] border border-[#2a2a3a] px-3 py-2 text-sm text-gray-200 font-mono rounded break-all">
+                {keyForAgent(lastCreatedAgentId)}
+              </code>
+              <button
+                type="button"
+                onClick={() => copyToClipboard(keyForAgent(lastCreatedAgentId) as string)}
+                className="p-2 text-gray-300 hover:text-white hover:bg-[#1a1a24] rounded transition-colors shrink-0"
+                title="Copy"
+              >
+                <Copy className="size-4" />
+              </button>
             </div>
           </div>
-
-          <div className="flex items-center justify-between p-4 bg-[#1a1a24] border border-[#2a2a3a] rounded">
-            <div>
-              <p className="text-sm text-white font-medium mb-1">Enable Automatic Archiving</p>
-              <p className="text-xs text-gray-400">Archive old logs to cold storage</p>
-            </div>
-            <label className="relative inline-flex items-center cursor-pointer">
-              <input
-                type="checkbox"
-                checked={archiveEnabled}
-                onChange={(e) => setArchiveEnabled(e.target.checked)}
-                className="sr-only peer"
-              />
-              <div className="w-11 h-6 bg-[#1a1a24] border border-[#2a2a3a] peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-gray-400 after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-[#4f46e5] peer-checked:after:bg-white"></div>
-            </label>
-          </div>
-
-          <div className="flex items-center justify-between p-4 bg-[#1a1a24] border border-[#2a2a3a] rounded">
-            <div>
-              <p className="text-sm text-white font-medium mb-1">Enable Log Compression</p>
-              <p className="text-xs text-gray-400">Compress logs to reduce storage usage</p>
-            </div>
-            <label className="relative inline-flex items-center cursor-pointer">
-              <input
-                type="checkbox"
-                checked={compressionEnabled}
-                onChange={(e) => setCompressionEnabled(e.target.checked)}
-                className="sr-only peer"
-              />
-              <div className="w-11 h-6 bg-[#1a1a24] border border-[#2a2a3a] peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-gray-400 after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-[#4f46e5] peer-checked:after:bg-white"></div>
-            </label>
-          </div>
-        </div>
-
-        {/* Alert Configuration */}
-        <div className="bg-[#0a0a0f] border border-[#1f1f2e] rounded-lg p-5 space-y-4">
-          <div className="flex items-center gap-2 mb-3">
-            <AlertTriangle className="size-5 text-[#f59e0b]" />
-            <h3 className="text-white font-medium">Alert Configuration</h3>
-          </div>
-
-          <div>
-            <label className="text-sm text-gray-400 mb-2 block">Alert Retention Period (Days)</label>
-            <input
-              type="number"
-              defaultValue={180}
-              min="30"
-              max="730"
-              className="w-32 bg-[#1a1a24] border border-[#2a2a3a] px-4 py-2.5 text-sm text-white focus:outline-none focus:border-[#4f46e5] transition-colors rounded"
-            />
-          </div>
-
-          <div>
-            <label className="text-sm text-gray-400 mb-2 block">Maximum Alerts Per Day</label>
-            <input
-              type="number"
-              defaultValue={10000}
-              min="100"
-              max="100000"
-              step="100"
-              className="w-32 bg-[#1a1a24] border border-[#2a2a3a] px-4 py-2.5 text-sm text-white focus:outline-none focus:border-[#4f46e5] transition-colors rounded"
-            />
-          </div>
-        </div>
-
-        {/* Save Button */}
-        <div className="flex items-center gap-3 pt-2">
-          <button className="flex items-center gap-2 px-6 py-2.5 bg-[#4f46e5] hover:bg-[#6366f1] text-white rounded transition-colors font-medium">
-            <Save className="size-4" />
-            Save Configuration
-          </button>
-          <div className="flex items-center gap-2 text-sm text-gray-400">
-            <CheckCircle2 className="size-4 text-[#10b981]" />
-            <span>All changes saved automatically</span>
-          </div>
-        </div>
+        )}
       </div>
     </div>
   );

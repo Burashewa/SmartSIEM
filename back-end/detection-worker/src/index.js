@@ -48,6 +48,7 @@ async function start() {
     getConsumerLag,
     getDb,
     getCurrentRules,
+    reloadRules,
   });
 
   periodicTimers.push(

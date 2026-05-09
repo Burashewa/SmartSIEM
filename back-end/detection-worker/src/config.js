@@ -42,6 +42,16 @@ const config = Object.freeze({
     statsIntervalMs: 600000,
     iocRefreshIntervalMs: 14400000,
   },
+  /**
+   * When `jwtSecret` is non-empty, dashboard API routes require
+   * `Authorization: Bearer <access_token>` minted by SmartSIEM-Collector
+   * (same secret + issuer as collector `auth_jwt_secret` / `auth_jwt_issuer`).
+   * Leave empty for local dev with an open API.
+   */
+  auth: {
+    jwtSecret: (process.env.AUTH_JWT_SECRET || '').trim(),
+    jwtIssuer: process.env.AUTH_JWT_ISSUER || 'smartsiem-collector',
+  },
 });
 
 module.exports = config;

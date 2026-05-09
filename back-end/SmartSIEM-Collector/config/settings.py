@@ -49,3 +49,13 @@ class Settings(BaseSettings):
     user_directory_json_path: str = ""
     threat_intel_enabled: bool = False
     threat_intel_provider: str = "placeholder"
+
+    # --- Authentication / Authorization (collector HTTP API) ---
+    # JWT signing secret (set in env for production)
+    auth_jwt_secret: str = "dev-insecure-change-me"
+    auth_jwt_issuer: str = "smartsiem-collector"
+    auth_access_token_ttl_seconds: int = 60 * 30  # 30 minutes
+    auth_refresh_token_ttl_seconds: int = 60 * 60 * 24 * 14  # 14 days
+
+    # When true, /ingest requires an agent API key (Authorization: Bearer <key> or X-API-Key)
+    require_ingest_auth: bool = False

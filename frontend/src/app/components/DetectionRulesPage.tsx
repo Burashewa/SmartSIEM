@@ -1,223 +1,261 @@
-import { useState } from 'react';
-import { Search, Clock, Hash, Shield, AlertTriangle, Lock, FileCode, Zap } from 'lucide-react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
+import {
+  Search,
+  Hash,
+  Shield,
+  AlertTriangle,
+  Lock,
+  FileCode,
+  Zap,
+  Plus,
+  RefreshCw,
+  Trash2,
+  X,
+} from 'lucide-react';
+import {
+  createRule,
+  deleteRule,
+  fetchRules,
+  reloadRules,
+  updateRule,
+  type DetectionRule,
+  type RuleType,
+} from '@/lib/smartsiemApi';
 
-interface DetectionRule {
-  id: string;
+const RULE_TYPES: RuleType[] = ['threshold', 'pattern', 'statistical', 'sequence'];
+const SEVERITIES = ['CRITICAL', 'HIGH', 'MEDIUM', 'LOW', 'INFO'] as const;
+
+type FormState = {
+  rule_id: string;
   name: string;
   description: string;
-  enabled: boolean;
-  lastTriggered: string | null;
-  triggerCount: number;
-  severity: 'critical' | 'high' | 'medium' | 'low';
-  category: string;
+  type: RuleType;
+  severity: string;
+  event_type: string;
+  configText: string;
+  status: 'ACTIVE' | 'DISABLED';
+};
+
+const EMPTY_FORM: FormState = {
+  rule_id: '',
+  name: '',
+  description: '',
+  type: 'pattern',
+  severity: 'MEDIUM',
+  event_type: '',
+  configText: '{}',
+  status: 'ACTIVE',
+};
+
+function severityIcon(severity?: string) {
+  switch ((severity || '').toUpperCase()) {
+    case 'CRITICAL':
+      return <Shield className="size-4 text-[#ef4444]" />;
+    case 'HIGH':
+      return <AlertTriangle className="size-4 text-[#f59e0b]" />;
+    case 'MEDIUM':
+      return <Zap className="size-4 text-[#eab308]" />;
+    case 'LOW':
+      return <FileCode className="size-4 text-[#3b82f6]" />;
+    default:
+      return <Shield className="size-4 text-gray-400" />;
+  }
 }
 
-const initialRules: DetectionRule[] = [
-  {
-    id: 'RULE-001',
-    name: 'Brute Force Detection',
-    description: 'Detects multiple failed login attempts from a single source IP',
-    enabled: true,
-    lastTriggered: new Date(Date.now() - 3600000).toISOString(),
-    triggerCount: 847,
-    severity: 'critical',
-    category: 'Authentication',
-  },
-  {
-    id: 'RULE-002',
-    name: 'SQL Injection Pattern',
-    description: 'Identifies SQL injection attempts in HTTP requests',
-    enabled: true,
-    lastTriggered: new Date(Date.now() - 7200000).toISOString(),
-    triggerCount: 523,
-    severity: 'critical',
-    category: 'Web Security',
-  },
-  {
-    id: 'RULE-003',
-    name: 'Lateral Movement Detection',
-    description: 'Monitors unusual internal network access patterns',
-    enabled: true,
-    lastTriggered: new Date(Date.now() - 86400000).toISOString(),
-    triggerCount: 234,
-    severity: 'high',
-    category: 'Network',
-  },
-  {
-    id: 'RULE-004',
-    name: 'Privilege Escalation',
-    description: 'Detects unauthorized privilege elevation attempts',
-    enabled: false,
-    lastTriggered: new Date(Date.now() - 172800000).toISOString(),
-    triggerCount: 156,
-    severity: 'critical',
-    category: 'Access Control',
-  },
-  {
-    id: 'RULE-005',
-    name: 'Malware Signature Match',
-    description: 'Identifies known malware signatures in file transfers',
-    enabled: true,
-    lastTriggered: new Date(Date.now() - 10800000).toISOString(),
-    triggerCount: 89,
-    severity: 'high',
-    category: 'Malware',
-  },
-  {
-    id: 'RULE-006',
-    name: 'Port Scanning Activity',
-    description: 'Detects reconnaissance through port scanning',
-    enabled: true,
-    lastTriggered: new Date(Date.now() - 5400000).toISOString(),
-    triggerCount: 412,
-    severity: 'medium',
-    category: 'Network',
-  },
-  {
-    id: 'RULE-007',
-    name: 'Data Exfiltration Pattern',
-    description: 'Monitors unusual outbound data transfer volumes',
-    enabled: true,
-    lastTriggered: new Date(Date.now() - 43200000).toISOString(),
-    triggerCount: 67,
-    severity: 'critical',
-    category: 'Data Loss',
-  },
-  {
-    id: 'RULE-008',
-    name: 'Suspicious PowerShell Execution',
-    description: 'Identifies potentially malicious PowerShell commands',
-    enabled: false,
-    lastTriggered: new Date(Date.now() - 259200000).toISOString(),
-    triggerCount: 145,
-    severity: 'high',
-    category: 'Execution',
-  },
-  {
-    id: 'RULE-009',
-    name: 'Anomalous Login Time',
-    description: 'Detects login attempts outside of normal hours',
-    enabled: true,
-    lastTriggered: new Date(Date.now() - 14400000).toISOString(),
-    triggerCount: 298,
-    severity: 'medium',
-    category: 'Authentication',
-  },
-  {
-    id: 'RULE-010',
-    name: 'DNS Tunneling Detection',
-    description: 'Identifies data exfiltration through DNS queries',
-    enabled: false,
-    lastTriggered: null,
-    triggerCount: 0,
-    severity: 'high',
-    category: 'Network',
-  },
-  {
-    id: 'RULE-011',
-    name: 'Ransomware Behavior',
-    description: 'Detects file encryption patterns typical of ransomware',
-    enabled: true,
-    lastTriggered: new Date(Date.now() - 604800000).toISOString(),
-    triggerCount: 12,
-    severity: 'critical',
-    category: 'Malware',
-  },
-  {
-    id: 'RULE-012',
-    name: 'Credential Dumping',
-    description: 'Monitors attempts to extract credentials from memory',
-    enabled: true,
-    lastTriggered: new Date(Date.now() - 21600000).toISOString(),
-    triggerCount: 78,
-    severity: 'critical',
-    category: 'Credential Access',
-  },
-];
+function severityChip(severity?: string) {
+  switch ((severity || '').toUpperCase()) {
+    case 'CRITICAL':
+      return 'bg-[#ef4444]/20 text-[#ef4444] border-[#ef4444]/30';
+    case 'HIGH':
+      return 'bg-[#f59e0b]/20 text-[#f59e0b] border-[#f59e0b]/30';
+    case 'MEDIUM':
+      return 'bg-[#eab308]/20 text-[#eab308] border-[#eab308]/30';
+    case 'LOW':
+      return 'bg-[#3b82f6]/20 text-[#3b82f6] border-[#3b82f6]/30';
+    default:
+      return 'bg-gray-700/20 text-gray-400 border-gray-700/30';
+  }
+}
+
+function timeAgo(timestamp?: string | null) {
+  if (!timestamp) return 'Never updated';
+  const date = new Date(timestamp);
+  if (Number.isNaN(date.getTime())) return timestamp;
+  const diffMs = Date.now() - date.getTime();
+  const diffMin = Math.floor(diffMs / 60000);
+  if (diffMin < 1) return 'Just now';
+  if (diffMin < 60) return `${diffMin} min ago`;
+  const diffHrs = Math.floor(diffMin / 60);
+  if (diffHrs < 24) return `${diffHrs} hour${diffHrs > 1 ? 's' : ''} ago`;
+  const diffDays = Math.floor(diffHrs / 24);
+  return `${diffDays} day${diffDays > 1 ? 's' : ''} ago`;
+}
 
 export function DetectionRulesPage() {
-  const [rules, setRules] = useState<DetectionRule[]>(initialRules);
+  const [rules, setRules] = useState<DetectionRule[]>([]);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
+  const [showCreate, setShowCreate] = useState(false);
+  const [form, setForm] = useState<FormState>(EMPTY_FORM);
+  const [submitting, setSubmitting] = useState(false);
+  const [busyRuleId, setBusyRuleId] = useState<string | null>(null);
 
-  const toggleRule = (ruleId: string) => {
-    setRules(prev =>
-      prev.map(rule =>
-        rule.id === ruleId ? { ...rule, enabled: !rule.enabled } : rule
-      )
+  const refresh = useCallback(async () => {
+    setLoading(true);
+    setError(null);
+    try {
+      const res = await fetchRules({ includeInactive: true });
+      setRules(res.items);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to load rules');
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    void refresh();
+  }, [refresh]);
+
+  const filteredRules = useMemo(() => {
+    const q = searchQuery.toLowerCase();
+    if (!q) return rules;
+    return rules.filter(
+      (r) =>
+        r.name.toLowerCase().includes(q) ||
+        r.rule_id.toLowerCase().includes(q) ||
+        (r.description || '').toLowerCase().includes(q) ||
+        String(r.event_type || '')
+          .toLowerCase()
+          .includes(q) ||
+        String(r.type || '')
+          .toLowerCase()
+          .includes(q)
     );
-  };
+  }, [rules, searchQuery]);
 
-  const filteredRules = rules.filter(rule =>
-    rule.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-    rule.id.toLowerCase().includes(searchQuery.toLowerCase()) ||
-    rule.description.toLowerCase().includes(searchQuery.toLowerCase()) ||
-    rule.category.toLowerCase().includes(searchQuery.toLowerCase())
+  const enabledCount = useMemo(
+    () => rules.filter((r) => String(r.status).toUpperCase() === 'ACTIVE').length,
+    [rules]
   );
 
-  const getSeverityIcon = (severity: string) => {
-    switch (severity) {
-      case 'critical':
-        return <Shield className="size-4 text-[#ef4444]" />;
-      case 'high':
-        return <AlertTriangle className="size-4 text-[#f59e0b]" />;
-      case 'medium':
-        return <Zap className="size-4 text-[#eab308]" />;
-      case 'low':
-        return <FileCode className="size-4 text-[#3b82f6]" />;
-      default:
-        return <Shield className="size-4 text-gray-400" />;
+  const toggleRule = async (rule: DetectionRule) => {
+    const next = String(rule.status).toUpperCase() === 'ACTIVE' ? 'DISABLED' : 'ACTIVE';
+    setBusyRuleId(rule.rule_id);
+    try {
+      const updated = await updateRule(rule.rule_id, { status: next });
+      setRules((prev) => prev.map((r) => (r.rule_id === rule.rule_id ? { ...r, ...updated } : r)));
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to update rule');
+    } finally {
+      setBusyRuleId(null);
     }
   };
 
-  const getSeverityColor = (severity: string) => {
-    switch (severity) {
-      case 'critical':
-        return 'bg-[#ef4444]/20 text-[#ef4444] border-[#ef4444]/30';
-      case 'high':
-        return 'bg-[#f59e0b]/20 text-[#f59e0b] border-[#f59e0b]/30';
-      case 'medium':
-        return 'bg-[#eab308]/20 text-[#eab308] border-[#eab308]/30';
-      case 'low':
-        return 'bg-[#3b82f6]/20 text-[#3b82f6] border-[#3b82f6]/30';
-      default:
-        return 'bg-gray-700/20 text-gray-400 border-gray-700/30';
+  const removeRule = async (rule: DetectionRule) => {
+    if (!window.confirm(`Delete rule "${rule.name}"? This cannot be undone.`)) return;
+    setBusyRuleId(rule.rule_id);
+    try {
+      await deleteRule(rule.rule_id);
+      setRules((prev) => prev.filter((r) => r.rule_id !== rule.rule_id));
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to delete rule');
+    } finally {
+      setBusyRuleId(null);
     }
   };
 
-  const formatTimestamp = (timestamp: string | null) => {
-    if (!timestamp) return 'Never triggered';
-    const date = new Date(timestamp);
-    const now = new Date();
-    const diffMs = now.getTime() - date.getTime();
-    const diffHrs = Math.floor(diffMs / 3600000);
-    const diffDays = Math.floor(diffHrs / 24);
+  const submitForm = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setError(null);
+    let parsedConfig: Record<string, unknown> = {};
+    try {
+      parsedConfig = form.configText.trim() ? JSON.parse(form.configText) : {};
+      if (parsedConfig === null || typeof parsedConfig !== 'object' || Array.isArray(parsedConfig)) {
+        throw new Error('config must be a JSON object');
+      }
+    } catch (err) {
+      setError(err instanceof Error ? `Invalid config JSON: ${err.message}` : 'Invalid config JSON');
+      return;
+    }
 
-    if (diffHrs < 1) return 'Less than 1 hour ago';
-    if (diffHrs < 24) return `${diffHrs} hour${diffHrs > 1 ? 's' : ''} ago`;
-    return `${diffDays} day${diffDays > 1 ? 's' : ''} ago`;
+    setSubmitting(true);
+    try {
+      const payload = {
+        ...(form.rule_id ? { rule_id: form.rule_id } : {}),
+        name: form.name,
+        description: form.description || undefined,
+        type: form.type,
+        severity: form.severity,
+        event_type: form.event_type || undefined,
+        status: form.status,
+        config: parsedConfig,
+      };
+      const created = await createRule(payload);
+      setRules((prev) => [created, ...prev]);
+      setShowCreate(false);
+      setForm(EMPTY_FORM);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to create rule');
+    } finally {
+      setSubmitting(false);
+    }
   };
 
-  const enabledCount = rules.filter(r => r.enabled).length;
+  const triggerReload = async () => {
+    try {
+      await reloadRules();
+      await refresh();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to reload rules');
+    }
+  };
 
   return (
     <div className="space-y-6">
-      {/* Header */}
-      <div className="flex items-center justify-between">
+      <div className="flex items-center justify-between flex-wrap gap-4">
         <div>
-          <h1 className="text-3xl text-white mb-2">Detection Rules Management</h1>
+          <h1 className="text-3xl text-white mb-2">Detection Rules</h1>
           <p className="text-gray-400">
-            Configure and monitor security detection rules • {enabledCount} of {rules.length} rules enabled
+            {enabledCount} of {rules.length} rule{rules.length === 1 ? '' : 's'} active • backed
+            by <span className="font-mono text-white">detection_rules</span>
           </p>
+        </div>
+        <div className="flex items-center gap-2">
+          <button
+            onClick={() => void triggerReload()}
+            className="flex items-center gap-2 text-sm text-gray-300 px-3 py-2 bg-[#1a1a24] hover:bg-[#2a2a3a] border border-[#2a2a3a]"
+            disabled={loading}
+          >
+            <RefreshCw className={`size-3.5 ${loading ? 'animate-spin' : ''}`} />
+            Reload
+          </button>
+          <button
+            onClick={() => {
+              setForm(EMPTY_FORM);
+              setShowCreate(true);
+            }}
+            className="flex items-center gap-2 bg-[#4f46e5] hover:bg-[#4338ca] text-white px-3 py-2 text-sm"
+          >
+            <Plus className="size-4" />
+            New Rule
+          </button>
         </div>
       </div>
 
-      {/* Search Bar */}
+      {error && (
+        <div className="text-sm text-amber-400 bg-amber-400/10 border border-amber-400/40 px-3 py-2">
+          {error}
+        </div>
+      )}
+
       <div className="bg-[#0f0f17] border border-[#1f1f2e] rounded-lg p-6">
         <div className="relative">
           <Search className="absolute left-4 top-1/2 -translate-y-1/2 size-5 text-gray-500" />
           <input
             type="text"
-            placeholder="Search rules by name, ID, description, or category..."
+            placeholder="Search rules by name, ID, type, event type, or description…"
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
             className="w-full bg-[#1a1a24] border border-[#2a2a3a] pl-12 pr-4 py-3 text-sm text-white placeholder:text-gray-500 focus:outline-none focus:border-[#4f46e5] transition-colors rounded"
@@ -225,128 +263,280 @@ export function DetectionRulesPage() {
         </div>
       </div>
 
-      {/* Stats Summary */}
       <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-        <div className="bg-[#0f0f17] border border-[#1f1f2e] rounded-lg p-4">
-          <div className="flex items-center justify-between">
-            <div>
-              <p className="text-xs text-gray-400 uppercase mb-1">Total Rules</p>
-              <p className="text-2xl text-white font-semibold">{rules.length}</p>
-            </div>
-            <FileCode className="size-8 text-[#4f46e5]" />
-          </div>
-        </div>
-        <div className="bg-[#0f0f17] border border-[#1f1f2e] rounded-lg p-4">
-          <div className="flex items-center justify-between">
-            <div>
-              <p className="text-xs text-gray-400 uppercase mb-1">Enabled</p>
-              <p className="text-2xl text-[#10b981] font-semibold">{enabledCount}</p>
-            </div>
-            <Shield className="size-8 text-[#10b981]" />
-          </div>
-        </div>
-        <div className="bg-[#0f0f17] border border-[#1f1f2e] rounded-lg p-4">
-          <div className="flex items-center justify-between">
-            <div>
-              <p className="text-xs text-gray-400 uppercase mb-1">Disabled</p>
-              <p className="text-2xl text-[#ef4444] font-semibold">{rules.length - enabledCount}</p>
-            </div>
-            <Lock className="size-8 text-[#ef4444]" />
-          </div>
-        </div>
-        <div className="bg-[#0f0f17] border border-[#1f1f2e] rounded-lg p-4">
-          <div className="flex items-center justify-between">
-            <div>
-              <p className="text-xs text-gray-400 uppercase mb-1">Total Triggers</p>
-              <p className="text-2xl text-white font-semibold">
-                {rules.reduce((sum, rule) => sum + rule.triggerCount, 0).toLocaleString()}
-              </p>
-            </div>
-            <Zap className="size-8 text-[#f59e0b]" />
-          </div>
-        </div>
+        <StatCard label="Total" value={rules.length} icon={<FileCode className="size-8 text-[#4f46e5]" />} />
+        <StatCard
+          label="Active"
+          value={enabledCount}
+          valueClass="text-[#10b981]"
+          icon={<Shield className="size-8 text-[#10b981]" />}
+        />
+        <StatCard
+          label="Disabled"
+          value={rules.length - enabledCount}
+          valueClass="text-[#ef4444]"
+          icon={<Lock className="size-8 text-[#ef4444]" />}
+        />
+        <StatCard
+          label="Types"
+          value={new Set(rules.map((r) => r.type)).size}
+          icon={<Zap className="size-8 text-[#f59e0b]" />}
+        />
       </div>
 
-      {/* Rules Grid */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-        {filteredRules.map((rule) => (
-          <div
-            key={rule.id}
-            className={`bg-[#0f0f17] border rounded-lg p-5 transition-all ${
-              rule.enabled
-                ? 'border-[#1f1f2e] hover:border-[#4f46e5]/50'
-                : 'border-[#1f1f2e] opacity-60'
-            }`}
-          >
-            {/* Card Header */}
-            <div className="flex items-start justify-between mb-4">
-              <div className="flex items-start gap-3 flex-1">
-                <div className="mt-0.5">
-                  {getSeverityIcon(rule.severity)}
-                </div>
-                <div className="flex-1">
-                  <h3 className="text-lg text-white font-medium mb-1">
-                    {rule.name}
-                  </h3>
-                  <p className="text-sm text-gray-400 mb-2">
-                    {rule.description}
-                  </p>
-                  <div className="flex items-center gap-2 flex-wrap">
-                    <span className={`text-xs px-2 py-0.5 border rounded ${getSeverityColor(rule.severity)}`}>
-                      {rule.severity.toUpperCase()}
-                    </span>
-                    <span className="text-xs px-2 py-0.5 bg-[#1a1a24] text-gray-400 rounded">
-                      {rule.category}
-                    </span>
+        {filteredRules.map((rule) => {
+          const enabled = String(rule.status).toUpperCase() === 'ACTIVE';
+          return (
+            <div
+              key={rule.rule_id}
+              className={`bg-[#0f0f17] border rounded-lg p-5 transition-all ${
+                enabled
+                  ? 'border-[#1f1f2e] hover:border-[#4f46e5]/50'
+                  : 'border-[#1f1f2e] opacity-60'
+              }`}
+            >
+              <div className="flex items-start justify-between mb-4">
+                <div className="flex items-start gap-3 flex-1 min-w-0">
+                  <div className="mt-0.5">{severityIcon(String(rule.severity))}</div>
+                  <div className="flex-1 min-w-0">
+                    <h3 className="text-lg text-white font-medium mb-1 truncate">{rule.name}</h3>
+                    <p className="text-sm text-gray-400 mb-2 line-clamp-2">
+                      {rule.description || rule.event_type || 'No description'}
+                    </p>
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <span className={`text-xs px-2 py-0.5 border rounded ${severityChip(String(rule.severity))}`}>
+                        {String(rule.severity || '').toUpperCase()}
+                      </span>
+                      <span className="text-xs px-2 py-0.5 bg-[#1a1a24] text-gray-400 rounded">
+                        {rule.type}
+                      </span>
+                      {rule.event_type && (
+                        <span className="text-xs px-2 py-0.5 bg-[#1a1a24] text-gray-400 rounded font-mono">
+                          {rule.event_type}
+                        </span>
+                      )}
+                    </div>
                   </div>
                 </div>
-              </div>
 
-              {/* Toggle Switch */}
-              <button
-                onClick={() => toggleRule(rule.id)}
-                className={`relative inline-flex h-6 w-11 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none focus:ring-2 focus:ring-[#4f46e5] focus:ring-offset-2 focus:ring-offset-[#0f0f17] ${
-                  rule.enabled ? 'bg-[#4f46e5]' : 'bg-[#2a2a3a]'
-                }`}
-              >
-                <span
-                  className={`pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out ${
-                    rule.enabled ? 'translate-x-5' : 'translate-x-0'
-                  }`}
-                />
-              </button>
-            </div>
-
-            {/* Card Footer */}
-            <div className="flex items-center justify-between pt-4 border-t border-[#1f1f2e]">
-              <div className="flex items-center gap-4 text-xs text-gray-400">
-                <div className="flex items-center gap-1.5">
-                  <Hash className="size-3.5" />
-                  <span className="font-mono">{rule.id}</span>
-                </div>
-                <div className="flex items-center gap-1.5">
-                  <Clock className="size-3.5" />
-                  <span>{formatTimestamp(rule.lastTriggered)}</span>
+                <div className="flex flex-col items-end gap-2 ml-2">
+                  <button
+                    onClick={() => void toggleRule(rule)}
+                    disabled={busyRuleId === rule.rule_id}
+                    className={`relative inline-flex h-6 w-11 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none disabled:opacity-50 ${
+                      enabled ? 'bg-[#4f46e5]' : 'bg-[#2a2a3a]'
+                    }`}
+                  >
+                    <span
+                      className={`pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out ${
+                        enabled ? 'translate-x-5' : 'translate-x-0'
+                      }`}
+                    />
+                  </button>
+                  <button
+                    onClick={() => void removeRule(rule)}
+                    disabled={busyRuleId === rule.rule_id}
+                    className="text-gray-500 hover:text-[#ef4444] disabled:opacity-50"
+                    title="Delete rule"
+                  >
+                    <Trash2 className="size-4" />
+                  </button>
                 </div>
               </div>
-              <div className="text-xs text-gray-400">
-                <span className="font-mono">{rule.triggerCount.toLocaleString()}</span> triggers
+
+              <div className="flex items-center justify-between pt-4 border-t border-[#1f1f2e] text-xs text-gray-400">
+                <div className="flex items-center gap-4 min-w-0">
+                  <div className="flex items-center gap-1.5 min-w-0">
+                    <Hash className="size-3.5 flex-shrink-0" />
+                    <span className="font-mono truncate">{rule.rule_id}</span>
+                  </div>
+                </div>
+                <div className="text-right whitespace-nowrap">
+                  Updated {timeAgo(rule.updated_at || rule.created_at)}
+                </div>
               </div>
             </div>
-          </div>
-        ))}
+          );
+        })}
       </div>
 
-      {/* No Results */}
-      {filteredRules.length === 0 && (
+      {filteredRules.length === 0 && !loading && (
         <div className="bg-[#0f0f17] border border-[#1f1f2e] rounded-lg p-12 text-center">
           <Search className="size-12 text-gray-600 mx-auto mb-4" />
           <h3 className="text-lg text-white mb-2">No rules found</h3>
           <p className="text-gray-400">
-            Try adjusting your search query
+            {rules.length === 0
+              ? 'Create the first detection rule to get started.'
+              : 'Try adjusting your search query.'}
           </p>
         </div>
       )}
+
+      {showCreate && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4">
+          <form
+            onSubmit={submitForm}
+            className="w-full max-w-2xl bg-[#0f0f17] border border-[#1f1f2e] p-6 max-h-[90vh] overflow-auto"
+          >
+            <div className="flex items-center justify-between mb-4">
+              <h3 className="text-xl text-white">Create Detection Rule</h3>
+              <button
+                type="button"
+                onClick={() => setShowCreate(false)}
+                className="text-gray-400 hover:text-white"
+              >
+                <X className="size-5" />
+              </button>
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <Field label="Rule ID (optional)">
+                <input
+                  type="text"
+                  placeholder="auto-generated if blank"
+                  value={form.rule_id}
+                  onChange={(e) => setForm({ ...form, rule_id: e.target.value })}
+                  className="w-full bg-[#1a1a24] border border-[#2a2a3a] px-3 py-2 text-sm text-white"
+                />
+              </Field>
+              <Field label="Name *">
+                <input
+                  type="text"
+                  required
+                  value={form.name}
+                  onChange={(e) => setForm({ ...form, name: e.target.value })}
+                  className="w-full bg-[#1a1a24] border border-[#2a2a3a] px-3 py-2 text-sm text-white"
+                />
+              </Field>
+              <Field label="Type *">
+                <select
+                  value={form.type}
+                  onChange={(e) => setForm({ ...form, type: e.target.value as RuleType })}
+                  className="w-full bg-[#1a1a24] border border-[#2a2a3a] px-3 py-2 text-sm text-white"
+                >
+                  {RULE_TYPES.map((t) => (
+                    <option key={t} value={t}>
+                      {t}
+                    </option>
+                  ))}
+                </select>
+              </Field>
+              <Field label="Severity">
+                <select
+                  value={form.severity}
+                  onChange={(e) => setForm({ ...form, severity: e.target.value })}
+                  className="w-full bg-[#1a1a24] border border-[#2a2a3a] px-3 py-2 text-sm text-white"
+                >
+                  {SEVERITIES.map((s) => (
+                    <option key={s} value={s}>
+                      {s}
+                    </option>
+                  ))}
+                </select>
+              </Field>
+              <Field label="Event Type">
+                <input
+                  type="text"
+                  placeholder="AUTH_FAIL, PROC_CREATE, …"
+                  value={form.event_type}
+                  onChange={(e) => setForm({ ...form, event_type: e.target.value })}
+                  className="w-full bg-[#1a1a24] border border-[#2a2a3a] px-3 py-2 text-sm text-white font-mono"
+                />
+              </Field>
+              <Field label="Status">
+                <select
+                  value={form.status}
+                  onChange={(e) =>
+                    setForm({ ...form, status: e.target.value as 'ACTIVE' | 'DISABLED' })
+                  }
+                  className="w-full bg-[#1a1a24] border border-[#2a2a3a] px-3 py-2 text-sm text-white"
+                >
+                  <option value="ACTIVE">ACTIVE</option>
+                  <option value="DISABLED">DISABLED</option>
+                </select>
+              </Field>
+              <Field label="Description" className="md:col-span-2">
+                <textarea
+                  rows={2}
+                  value={form.description}
+                  onChange={(e) => setForm({ ...form, description: e.target.value })}
+                  className="w-full bg-[#1a1a24] border border-[#2a2a3a] px-3 py-2 text-sm text-white"
+                />
+              </Field>
+              <Field label="Config JSON" className="md:col-span-2">
+                <textarea
+                  rows={6}
+                  value={form.configText}
+                  onChange={(e) => setForm({ ...form, configText: e.target.value })}
+                  className="w-full bg-[#0a0a0f] border border-[#2a2a3a] px-3 py-2 text-xs text-[#10b981] font-mono"
+                  placeholder='{ "window_sec": 60, "threshold": 5, "key_fields": ["source_ip"] }'
+                />
+              </Field>
+            </div>
+
+            <div className="flex items-center justify-end gap-2 pt-4 border-t border-[#1f1f2e] mt-6">
+              <button
+                type="button"
+                onClick={() => setShowCreate(false)}
+                className="px-4 py-2 bg-[#1a1a24] hover:bg-[#2a2a3a] border border-[#2a2a3a] text-white text-sm"
+              >
+                Cancel
+              </button>
+              <button
+                type="submit"
+                disabled={submitting}
+                className="px-4 py-2 bg-[#4f46e5] hover:bg-[#4338ca] text-white text-sm disabled:opacity-50"
+              >
+                {submitting ? 'Creating…' : 'Create Rule'}
+              </button>
+            </div>
+          </form>
+        </div>
+      )}
     </div>
+  );
+}
+
+function StatCard({
+  label,
+  value,
+  icon,
+  valueClass,
+}: {
+  label: string;
+  value: number;
+  icon: React.ReactNode;
+  valueClass?: string;
+}) {
+  return (
+    <div className="bg-[#0f0f17] border border-[#1f1f2e] rounded-lg p-4">
+      <div className="flex items-center justify-between">
+        <div>
+          <p className="text-xs text-gray-400 uppercase mb-1">{label}</p>
+          <p className={`text-2xl font-semibold ${valueClass || 'text-white'}`}>
+            {value.toLocaleString()}
+          </p>
+        </div>
+        {icon}
+      </div>
+    </div>
+  );
+}
+
+function Field({
+  label,
+  children,
+  className,
+}: {
+  label: string;
+  children: React.ReactNode;
+  className?: string;
+}) {
+  return (
+    <label className={`block ${className || ''}`}>
+      <span className="block text-xs text-gray-400 uppercase mb-1">{label}</span>
+      {children}
+    </label>
   );
 }
