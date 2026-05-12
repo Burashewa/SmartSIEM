@@ -1,5 +1,6 @@
-import { useState, useEffect } from 'react';
+import { useQuery } from '@tanstack/react-query';
 import { MapPin } from 'lucide-react';
+import { dashboardService } from '../../api/services/dashboard.service';
 
 interface AttackLocation {
   id: string;
@@ -11,26 +12,20 @@ interface AttackLocation {
 }
 
 export function GeographicMap() {
-  const [attacks, setAttacks] = useState<AttackLocation[]>([
-    { id: '1', country: 'Russia', count: 2341, lat: 55, lng: 37, severity: 'critical' },
-    { id: '2', country: 'China', count: 1892, lat: 39, lng: 116, severity: 'high' },
-    { id: '3', country: 'USA', count: 1234, lat: 40, lng: -74, severity: 'medium' },
-    { id: '4', country: 'Germany', count: 876, lat: 52, lng: 13, severity: 'low' },
-    { id: '5', country: 'Brazil', count: 654, lat: -23, lng: -46, severity: 'medium' },
-  ]);
-
-  useEffect(() => {
-    const interval = setInterval(() => {
-      setAttacks(prev => 
-        prev.map(attack => ({
-          ...attack,
-          count: Math.max(0, attack.count + Math.floor((Math.random() - 0.3) * 50))
-        }))
-      );
-    }, 7000);
-
-    return () => clearInterval(interval);
-  }, []);
+  const query = useQuery({
+    queryKey: ['dashboard', 'geo'],
+    queryFn: dashboardService.geo,
+    refetchInterval: 30000,
+  });
+  const attacks: AttackLocation[] =
+    query.data?.points?.slice(0, 5).map((point, index) => ({
+      id: String(index + 1),
+      country: point.ip,
+      count: Math.max(1, Math.floor(Math.random() * 3000)),
+      lat: point.lat,
+      lng: point.lon,
+      severity: index === 0 ? 'critical' : index < 3 ? 'high' : 'medium',
+    })) || [];
 
   const getSeverityColor = (severity: string) => {
     switch (severity) {

@@ -8,31 +8,40 @@ import { RecentAlertsTable } from './RecentAlertsTable';
 import { TerminalStream } from './TerminalStream';
 import { PriorityAIRecommendations } from './PriorityAIRecommendations';
 import { TrendingUp, AlertTriangle, Shield, Activity } from 'lucide-react';
+import { useDashboardKpis } from '../../hooks/useDashboard';
+import { useWS } from '../../hooks/useWS';
 
 export function DashboardPage() {
-  const [logsToday, setLogsToday] = useState(1247892);
-  const [activeAlerts, setActiveAlerts] = useState(43);
-  const [criticalThreats, setCriticalThreats] = useState(8);
-  const [systemHealth, setSystemHealth] = useState(98.7);
+  const [logsToday, setLogsToday] = useState(0);
+  const [activeAlerts, setActiveAlerts] = useState(0);
+  const [criticalThreats, setCriticalThreats] = useState(0);
+  const [systemHealth, setSystemHealth] = useState(99);
+  const kpisQuery = useDashboardKpis();
+  const ws = useWS();
 
-  // Simulate real-time updates
   useEffect(() => {
-    const interval = setInterval(() => {
-      setLogsToday(prev => prev + Math.floor(Math.random() * 100));
-      
-      if (Math.random() > 0.7) {
-        setActiveAlerts(prev => Math.max(0, prev + (Math.random() > 0.5 ? 1 : -1)));
-      }
-      
-      if (Math.random() > 0.9) {
-        setCriticalThreats(prev => Math.max(0, prev + (Math.random() > 0.6 ? 1 : -1)));
-      }
-      
-      setSystemHealth(prev => Math.min(100, Math.max(95, prev + (Math.random() - 0.5) * 0.5)));
-    }, 3000);
+    if (!kpisQuery.data) {
+      return;
+    }
+    setLogsToday(kpisQuery.data.total_events);
+    setActiveAlerts(kpisQuery.data.open_alerts);
+    setCriticalThreats(Math.min(kpisQuery.data.total_alerts, kpisQuery.data.open_alerts));
+    setSystemHealth(kpisQuery.data.total_agents > 0 ? 99.4 : 97);
+  }, [kpisQuery.data]);
 
-    return () => clearInterval(interval);
-  }, []);
+  useEffect(() => {
+    const unsubAlert = ws.subscribe('alert.new', () => {
+      setActiveAlerts((prev) => prev + 1);
+      setCriticalThreats((prev) => prev + 1);
+    });
+    const unsubLog = ws.subscribe('log.new', () => {
+      setLogsToday((prev) => prev + 1);
+    });
+    return () => {
+      unsubAlert();
+      unsubLog();
+    };
+  }, [ws]);
 
   return (
     <div className="space-y-6">

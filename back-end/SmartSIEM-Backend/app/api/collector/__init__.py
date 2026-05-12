@@ -1,0 +1,1 @@
+"""Collector routes package."""

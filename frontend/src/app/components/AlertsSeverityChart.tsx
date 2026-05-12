@@ -1,5 +1,7 @@
-import { useState, useEffect } from 'react';
-import { PieChart, Pie, Cell, ResponsiveContainer, Legend, Tooltip } from 'recharts';
+import { memo } from 'react';
+import { PieChart, Pie, Cell, ResponsiveContainer, Tooltip } from 'recharts';
+import { useQuery } from '@tanstack/react-query';
+import { dashboardService } from '../../api/services/dashboard.service';
 
 interface AlertData {
   name: string;
@@ -7,28 +9,28 @@ interface AlertData {
   color: string;
 }
 
-export function AlertsSeverityChart() {
-  const [data, setData] = useState<AlertData[]>([
-    { name: 'Critical', value: 8, color: '#ef4444' },
-    { name: 'High', value: 15, color: '#f59e0b' },
-    { name: 'Medium', value: 28, color: '#eab308' },
-    { name: 'Low', value: 42, color: '#3b82f6' },
-    { name: 'Info', value: 67, color: '#6b7280' },
-  ]);
-
-  // Simulate real-time updates
-  useEffect(() => {
-    const interval = setInterval(() => {
-      setData(prevData => {
-        return prevData.map(item => ({
-          ...item,
-          value: Math.max(0, item.value + Math.floor((Math.random() - 0.4) * 3))
-        }));
-      });
-    }, 8000);
-
-    return () => clearInterval(interval);
-  }, []);
+function AlertsSeverityChartImpl() {
+  const query = useQuery({
+    queryKey: ['dashboard', 'alertsChart'],
+    queryFn: dashboardService.alertsChart,
+    refetchInterval: 15000,
+  });
+  const palette: Record<string, string> = {
+    CRITICAL: '#ef4444',
+    HIGH: '#f59e0b',
+    MEDIUM: '#eab308',
+    LOW: '#3b82f6',
+    INFO: '#6b7280',
+  };
+  const data: AlertData[] =
+    query.data?.series?.map((item) => {
+      const key = item.severity.toUpperCase();
+      return {
+        name: key[0] + key.slice(1).toLowerCase(),
+        value: item.count,
+        color: palette[key] || '#6b7280',
+      };
+    }) || [];
 
   return (
     <div className="bg-[#0f0f17] border border-[#1f1f2e] p-6">
@@ -79,3 +81,5 @@ export function AlertsSeverityChart() {
     </div>
   );
 }
+
+export const AlertsSeverityChart = memo(AlertsSeverityChartImpl);

@@ -1,5 +1,8 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { AlertTriangle, Clock, CheckCircle, XCircle, Eye } from 'lucide-react';
+import { useQueryClient } from '@tanstack/react-query';
+import { useAlerts } from '../../hooks/useAlerts';
+import { useWS } from '../../hooks/useWS';
 
 interface Alert {
   id: string;
@@ -15,81 +18,44 @@ interface Alert {
   affectedAssets: string[];
 }
 
-const mockAlerts: Alert[] = [
-  {
-    id: 'ALT-2026-001',
-    title: 'SQL Injection Attack Detected',
-    severity: 'critical',
-    status: 'open',
-    timestamp: '2026-02-18 14:32:45',
-    sourceIp: '203.45.67.89',
-    targetIp: '10.0.1.45',
-    description: 'Multiple SQL injection attempts detected on web application endpoint /api/users. Attack signature matches known SQLi patterns. Immediate action required.',
-    recommendations: [
-      'Block source IP at firewall level',
-      'Review application input validation',
-      'Check for data exfiltration',
-      'Update WAF rules',
-    ],
-    detectedBy: 'Web Application Firewall',
-    affectedAssets: ['web-server-01', 'database-primary'],
-  },
-  {
-    id: 'ALT-2026-002',
-    title: 'Brute Force Attack on SSH',
-    severity: 'high',
-    status: 'investigating',
-    timestamp: '2026-02-18 13:15:22',
-    sourceIp: '192.168.1.100',
-    targetIp: '10.0.1.23',
-    description: 'Detected 1,234 failed SSH login attempts from single IP address within 5 minutes. Account lockout triggered.',
-    recommendations: [
-      'Implement fail2ban on SSH service',
-      'Enable two-factor authentication',
-      'Review access logs',
-    ],
-    detectedBy: 'IDS/IPS System',
-    affectedAssets: ['ssh-server-01'],
-  },
-  {
-    id: 'ALT-2026-003',
-    title: 'Malware Signature Detected',
-    severity: 'high',
-    status: 'investigating',
-    timestamp: '2026-02-18 12:45:11',
-    sourceIp: '172.16.0.45',
-    targetIp: '10.0.1.67',
-    description: 'File download matches known malware signature. File quarantined automatically.',
-    recommendations: [
-      'Scan affected system for malware',
-      'Review user activity',
-      'Update antivirus definitions',
-    ],
-    detectedBy: 'Endpoint Protection',
-    affectedAssets: ['workstation-045'],
-  },
-  {
-    id: 'ALT-2026-004',
-    title: 'DDoS Attack Pattern',
-    severity: 'medium',
-    status: 'resolved',
-    timestamp: '2026-02-18 11:20:33',
-    sourceIp: 'Multiple',
-    targetIp: '10.0.1.1',
-    description: 'Unusual traffic spike detected from 142 different IP addresses. DDoS mitigation activated.',
-    recommendations: [
-      'Monitor bandwidth usage',
-      'Review CDN configuration',
-    ],
-    detectedBy: 'Network Monitor',
-    affectedAssets: ['load-balancer-01'],
-  },
-];
+const toUiStatus = (status: string): Alert['status'] => {
+  const normalized = status.toLowerCase();
+  if (normalized === 'new' || normalized === 'open') return 'open';
+  if (normalized === 'investigating') return 'investigating';
+  return 'resolved';
+};
 
 export function AlertsPage() {
-  const [alerts] = useState<Alert[]>(mockAlerts);
+  const [alerts, setAlerts] = useState<Alert[]>([]);
   const [selectedAlert, setSelectedAlert] = useState<Alert | null>(null);
   const [statusFilter, setStatusFilter] = useState<'all' | 'open' | 'investigating' | 'resolved'>('all');
+  const queryClient = useQueryClient();
+  const alertsQuery = useAlerts({ limit: 200, sort: '-trigger_time' });
+  const ws = useWS();
+
+  useEffect(() => {
+    const mapped: Alert[] = (alertsQuery.data?.data || []).map((alert) => ({
+      id: String(alert.id || alert.alert_id),
+      title: alert.rule_name || alert.event_type || 'Security Alert',
+      severity: String(alert.severity || 'low').toLowerCase() as Alert['severity'],
+      status: toUiStatus(String(alert.status || 'open')),
+      timestamp: String(alert.trigger_time || ''),
+      sourceIp: String(alert.source_ip || 'unknown'),
+      targetIp: '-',
+      description: String(alert.description || ''),
+      recommendations: alert.recommendation?.action_steps || ['Investigate event context'],
+      detectedBy: String(alert.rule_id || 'Detection Engine'),
+      affectedAssets: alert.linked_events?.length ? ['linked events'] : ['unknown'],
+    }));
+    setAlerts(mapped);
+  }, [alertsQuery.data?.data]);
+
+  useEffect(() => {
+    const unsubscribe = ws.subscribe('alert.new', () => {
+      void queryClient.invalidateQueries({ queryKey: ['alerts'] });
+    });
+    return () => unsubscribe();
+  }, [queryClient, ws]);
 
   const filteredAlerts = alerts.filter(
     alert => statusFilter === 'all' || alert.status === statusFilter

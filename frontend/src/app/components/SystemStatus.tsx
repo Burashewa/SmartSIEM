@@ -1,21 +1,24 @@
-import { useState, useEffect } from 'react';
+import { useEffect, useState } from 'react';
 import { Database } from 'lucide-react';
+import { agentsService } from '../../api/services/agents.service';
+import { useWS } from '../../hooks/useWS';
 
 export function SystemStatus() {
-  const [ingestionRate, setIngestionRate] = useState(450);
+  const [ingestionRate, setIngestionRate] = useState(0);
   const [isConnected, setIsConnected] = useState(true);
+  const ws = useWS();
 
-  // Simulate real-time ingestion rate updates
   useEffect(() => {
-    const interval = setInterval(() => {
-      setIngestionRate(prev => {
-        const change = Math.floor(Math.random() * 100) - 50;
-        return Math.max(200, Math.min(800, prev + change));
-      });
-    }, 2000);
-
-    return () => clearInterval(interval);
-  }, []);
+    void agentsService
+      .list()
+      .then(() => setIsConnected(true))
+      .catch(() => setIsConnected(false));
+    const unsubscribe = ws.subscribe('stats.update', (event) => {
+      const value = Number(event.data?.eps || event.data?.ingestion_rate || 0);
+      setIngestionRate(Number.isNaN(value) ? 0 : value);
+    });
+    return () => unsubscribe();
+  }, [ws]);
 
   return (
     <div className="flex items-center gap-6 px-4 py-2 bg-[#1a1a24] border border-[#2a2a3a]">

@@ -1,13 +1,16 @@
 import { Search, Bell, User, Activity } from 'lucide-react';
-import { useState } from 'react';
 import { SystemStatus } from './SystemStatus';
+import { useNotificationStore } from '../../store/notificationStore';
+import { useAuthStore } from '../../store/authStore';
 
 interface HeaderProps {
   systemStatus: 'healthy' | 'critical';
 }
 
 export function Header({ systemStatus }: HeaderProps) {
-  const [notificationCount] = useState(12);
+  const notificationCount = useNotificationStore((state) => state.liveAlertCount);
+  const user = useAuthStore((state) => state.user);
+  const logout = useAuthStore((state) => state.logout);
 
   return (
     <header className="h-16 bg-[#0f0f17] border-b border-[#1f1f2e] flex items-center justify-between px-6">
@@ -64,9 +67,16 @@ export function Header({ systemStatus }: HeaderProps) {
             <User className="size-4 text-white" />
           </div>
           <div className="text-left">
-            <div className="text-sm text-white">Admin</div>
-            <div className="text-xs text-gray-500">SOC Analyst</div>
+            <div className="text-sm text-white">{user?.username || 'Admin'}</div>
+            <div className="text-xs text-gray-500">{user?.role || 'SOC Analyst'}</div>
           </div>
+        </button>
+        <button
+          type="button"
+          onClick={() => void logout()}
+          className="px-3 py-1.5 bg-[#1a1a24] hover:bg-[#2a2a3a] border border-[#2a2a3a] text-white text-sm"
+        >
+          Logout
         </button>
       </div>
     </header>

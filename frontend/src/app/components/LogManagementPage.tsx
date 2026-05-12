@@ -1,5 +1,12 @@
-import { useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { Search, Filter, Download, ChevronDown, ChevronRight } from 'lucide-react';
+import { useVirtualizer } from '@tanstack/react-virtual';
+import { useQueryClient } from '@tanstack/react-query';
+
+import { useLogs } from '../../hooks/useLogs';
+import { useWS } from '../../hooks/useWS';
+import { usePagination } from '../../hooks/usePagination';
+import { PaginationBar } from '../../components/shared/PaginationBar';
 
 interface LogEntry {
   id: string;
@@ -7,78 +14,59 @@ interface LogEntry {
   level: 'INFO' | 'WARN' | 'ERROR' | 'DEBUG';
   source: string;
   message: string;
-  details: Record<string, any>;
+  details: Record<string, unknown>;
 }
 
-const mockLogs: LogEntry[] = [
-  {
-    id: '1',
-    timestamp: '2026-02-18 14:32:45.234',
-    level: 'ERROR',
-    source: 'auth-service',
-    message: 'Failed authentication attempt for user admin',
-    details: {
-      ip: '192.168.1.100',
-      userAgent: 'Mozilla/5.0',
-      attempts: 5,
-    },
-  },
-  {
-    id: '2',
-    timestamp: '2026-02-18 14:32:43.122',
-    level: 'INFO',
-    source: 'firewall',
-    message: 'Connection established from trusted IP',
-    details: {
-      ip: '10.0.1.45',
-      port: 443,
-      protocol: 'HTTPS',
-    },
-  },
-  {
-    id: '3',
-    timestamp: '2026-02-18 14:32:41.567',
-    level: 'WARN',
-    source: 'ids-system',
-    message: 'Suspicious pattern detected in HTTP request',
-    details: {
-      pattern: 'SQL_INJECTION',
-      severity: 'medium',
-      blocked: true,
-    },
-  },
-  {
-    id: '4',
-    timestamp: '2026-02-18 14:32:39.890',
-    level: 'INFO',
-    source: 'web-server',
-    message: 'GET /api/users 200 OK',
-    details: {
-      method: 'GET',
-      path: '/api/users',
-      status: 200,
-      duration: '23ms',
-    },
-  },
-  {
-    id: '5',
-    timestamp: '2026-02-18 14:32:37.456',
-    level: 'DEBUG',
-    source: 'database',
-    message: 'Query executed successfully',
-    details: {
-      query: 'SELECT * FROM logs WHERE timestamp > ?',
-      duration: '12ms',
-      rows: 1247,
-    },
-  },
-];
-
 export function LogManagementPage() {
-  const [logs] = useState<LogEntry[]>(mockLogs);
   const [selectedLog, setSelectedLog] = useState<string | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
+  const [debouncedSearch, setDebouncedSearch] = useState('');
   const [levelFilter, setLevelFilter] = useState('all');
+  const queryClient = useQueryClient();
+  const ws = useWS();
+  const { page, limit, setPage } = usePagination(1, 50);
+  const logsQuery = useLogs({
+    page,
+    limit,
+    search: debouncedSearch || undefined,
+    severity: levelFilter === 'all' ? undefined : levelFilter,
+  });
+
+  useEffect(() => {
+    const timeout = window.setTimeout(() => setDebouncedSearch(searchQuery), 500);
+    return () => window.clearTimeout(timeout);
+  }, [searchQuery]);
+
+  useEffect(() => {
+    const unsubscribe = ws.subscribe('log.new', () => {
+      void queryClient.invalidateQueries({ queryKey: ['logs'] });
+    });
+    return () => unsubscribe();
+  }, [queryClient, ws]);
+
+  const logs = useMemo<LogEntry[]>(
+    () =>
+      (logsQuery.data?.data || []).map((log) => {
+        const level = String(log.event?.severity || 'INFO').toUpperCase();
+        return {
+          id: String(log.id),
+          timestamp: String(log.timestamp || ''),
+          level: (['INFO', 'WARN', 'ERROR', 'DEBUG'].includes(level) ? level : 'INFO') as LogEntry['level'],
+          source: String(log.source?.host?.name || log.source?.ip || 'collector'),
+          message: String(log.message || ''),
+          details: log as unknown as Record<string, unknown>,
+        };
+      }),
+    [logsQuery.data?.data],
+  );
+
+  const parentRef = useRef<HTMLDivElement | null>(null);
+  const virtualizer = useVirtualizer({
+    count: logs.length,
+    getScrollElement: () => parentRef.current,
+    estimateSize: () => 74,
+    overscan: 10,
+  });
 
   const getLevelColor = (level: string) => {
     switch (level) {
@@ -180,76 +168,75 @@ export function LogManagementPage() {
               Log Entries ({logs.length.toLocaleString()} results)
             </h3>
             <div className="text-sm text-gray-400">
-              Showing 1-{logs.length} of 1,247,892
+              Showing {(page - 1) * limit + 1}-{Math.min(page * limit, logsQuery.data?.total || logs.length)} of{' '}
+              {(logsQuery.data?.total || logs.length).toLocaleString()}
             </div>
           </div>
         </div>
 
-        <div className="divide-y divide-[#1f1f2e]">
-          {logs.map((log) => (
-            <div key={log.id} className="hover:bg-[#1a1a24] transition-colors">
-              <div
-                className="px-6 py-4 cursor-pointer"
-                onClick={() => setSelectedLog(selectedLog === log.id ? null : log.id)}
-              >
-                <div className="flex items-start gap-4">
-                  <div className="flex-shrink-0 pt-1">
-                    {selectedLog === log.id ? (
-                      <ChevronDown className="size-4 text-gray-400" />
-                    ) : (
-                      <ChevronRight className="size-4 text-gray-400" />
-                    )}
-                  </div>
-                  <div className="flex-1 min-w-0">
-                    <div className="flex items-start gap-4 mb-2">
-                      <span className="font-mono text-xs text-gray-500 whitespace-nowrap">
-                        {log.timestamp}
-                      </span>
-                      <span className={`font-mono text-xs font-medium ${getLevelColor(log.level)} whitespace-nowrap`}>
-                        {log.level}
-                      </span>
-                      <span className="font-mono text-xs text-[#8b5cf6] whitespace-nowrap">
-                        {log.source}
-                      </span>
+        <div ref={parentRef} className="h-[520px] overflow-auto">
+          <div style={{ height: `${virtualizer.getTotalSize()}px`, position: 'relative' }}>
+            {virtualizer.getVirtualItems().map((virtualRow) => {
+              const log = logs[virtualRow.index];
+              return (
+                <div
+                  key={virtualRow.key}
+                  className="hover:bg-[#1a1a24] transition-colors border-b border-[#1f1f2e]"
+                  style={{
+                    position: 'absolute',
+                    top: 0,
+                    left: 0,
+                    width: '100%',
+                    transform: `translateY(${virtualRow.start}px)`,
+                  }}
+                >
+                  <div
+                    className="px-6 py-4 cursor-pointer"
+                    onClick={() => setSelectedLog(selectedLog === log.id ? null : log.id)}
+                  >
+                    <div className="flex items-start gap-4">
+                      <div className="flex-shrink-0 pt-1">
+                        {selectedLog === log.id ? (
+                          <ChevronDown className="size-4 text-gray-400" />
+                        ) : (
+                          <ChevronRight className="size-4 text-gray-400" />
+                        )}
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-start gap-4 mb-2">
+                          <span className="font-mono text-xs text-gray-500 whitespace-nowrap">
+                            {log.timestamp}
+                          </span>
+                          <span className={`font-mono text-xs font-medium ${getLevelColor(log.level)} whitespace-nowrap`}>
+                            {log.level}
+                          </span>
+                          <span className="font-mono text-xs text-[#8b5cf6] whitespace-nowrap">{log.source}</span>
+                        </div>
+                        <div className="text-sm text-white">{log.message}</div>
+                      </div>
                     </div>
-                    <div className="text-sm text-white">
-                      {log.message}
+                  </div>
+                  {selectedLog === log.id && (
+                    <div className="px-6 pb-4">
+                      <div className="ml-8 bg-[#000000] border border-[#2a2a3a] p-4 overflow-x-auto">
+                        <pre className="text-xs font-mono text-[#10b981]">{JSON.stringify(log.details, null, 2)}</pre>
+                      </div>
                     </div>
-                  </div>
+                  )}
                 </div>
-              </div>
-
-              {/* Expanded JSON Details */}
-              {selectedLog === log.id && (
-                <div className="px-6 pb-4">
-                  <div className="ml-8 bg-[#000000] border border-[#2a2a3a] p-4 overflow-x-auto">
-                    <pre className="text-xs font-mono text-[#10b981]">
-                      {JSON.stringify(log.details, null, 2)}
-                    </pre>
-                  </div>
-                </div>
-              )}
-            </div>
-          ))}
+              );
+            })}
+          </div>
         </div>
 
         {/* Pagination */}
         <div className="border-t border-[#1f1f2e] px-6 py-4">
-          <div className="flex items-center justify-between">
-            <button className="px-4 py-2 bg-[#1a1a24] hover:bg-[#2a2a3a] border border-[#2a2a3a] text-white text-sm">
-              Previous
-            </button>
-            <div className="flex items-center gap-2">
-              <button className="size-8 bg-[#4f46e5] text-white text-sm">1</button>
-              <button className="size-8 hover:bg-[#1a1a24] text-white text-sm">2</button>
-              <button className="size-8 hover:bg-[#1a1a24] text-white text-sm">3</button>
-              <span className="text-gray-500 text-sm">...</span>
-              <button className="size-8 hover:bg-[#1a1a24] text-white text-sm">124</button>
-            </div>
-            <button className="px-4 py-2 bg-[#1a1a24] hover:bg-[#2a2a3a] border border-[#2a2a3a] text-white text-sm">
-              Next
-            </button>
-          </div>
+          <PaginationBar
+            page={page}
+            limit={limit}
+            total={logsQuery.data?.total || logs.length}
+            onPageChange={setPage}
+          />
         </div>
       </div>
     </div>

@@ -130,36 +130,14 @@ Generated: ${new Date().toLocaleString()}
   };
 
   const highlightJSON = (json: string) => {
-    return json.split('\n').map((line, index) => {
-      let highlightedLine = line;
-      
-      // Highlight keys (before colon)
-      highlightedLine = highlightedLine.replace(
-        /"([^"]+)":/g,
-        '<span class="text-[#7dd3fc]">"$1"</span>:'
-      );
-      
-      // Highlight string values
-      highlightedLine = highlightedLine.replace(
-        /: "([^"]+)"/g,
-        ': <span class="text-[#86efac]">"$1"</span>'
-      );
-      
-      // Highlight numbers
-      highlightedLine = highlightedLine.replace(
-        /: (\d+\.?\d*)(,?)/g,
-        ': <span class="text-[#fbbf24]">$1</span>$2'
-      );
-
-      return (
-        <div key={index} className="flex">
-          <span className="select-none text-gray-600 w-10 text-right pr-4 flex-shrink-0">
-            {index + 1}
-          </span>
-          <span dangerouslySetInnerHTML={{ __html: highlightedLine }} />
-        </div>
-      );
-    });
+    return json.split('\n').map((line, index) => (
+      <div key={index} className="flex">
+        <span className="select-none text-gray-600 w-10 text-right pr-4 flex-shrink-0">
+          {index + 1}
+        </span>
+        <span className="text-[#86efac] whitespace-pre-wrap">{line}</span>
+      </div>
+    ));
   };
 
   return (

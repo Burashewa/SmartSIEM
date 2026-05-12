@@ -11,10 +11,24 @@ import { AccessControlPage } from './components/AccessControlPage';
 import { ReportsPage } from './components/ReportsPage';
 import { SettingsPage } from './components/SettingsPage';
 import { UserManagementPage } from './components/UserManagementPage';
+import { LoginPage } from './components/LoginPage';
+import { isAuthenticated } from '../lib/api';
+import { useSmartSiemWebSocket } from '../lib/websocket';
 
 export default function App() {
   const [currentPage, setCurrentPage] = useState('dashboard');
   const [systemStatus, setSystemStatus] = useState<'healthy' | 'critical'>('healthy');
+  const [authenticated, setAuthenticated] = useState(isAuthenticated());
+
+  useSmartSiemWebSocket((event) => {
+    if (event?.type === 'alert.new') {
+      setSystemStatus('critical');
+    }
+  });
+
+  if (!authenticated) {
+    return <LoginPage onSuccess={() => setAuthenticated(true)} />;
+  }
 
   const renderPage = () => {
     switch (currentPage) {

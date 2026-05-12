@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef } from 'react';
 import { Terminal, AlertCircle, Shield, Activity } from 'lucide-react';
+import { useWS } from '../../hooks/useWS';
 
 interface LogEvent {
   id: string;
@@ -8,46 +9,30 @@ interface LogEvent {
   message: string;
 }
 
-const eventTemplates = [
-  { type: 'info' as const, message: 'New connection established from IP 192.168.{x}.{y}' },
-  { type: 'warning' as const, message: 'Failed login attempt detected - User: admin' },
-  { type: 'critical' as const, message: 'Suspicious activity: SQL injection attempt blocked' },
-  { type: 'success' as const, message: 'Firewall rule updated successfully' },
-  { type: 'info' as const, message: 'Log rotation completed - 2.4GB archived' },
-  { type: 'warning' as const, message: 'High CPU usage detected on node-{x}' },
-  { type: 'critical' as const, message: 'DDoS attack detected from {x} sources' },
-  { type: 'success' as const, message: 'Threat signature database updated' },
-  { type: 'info' as const, message: 'TLS handshake completed with 10.{x}.{y}.{z}' },
-  { type: 'warning' as const, message: 'Port scan detected from 203.{x}.{y}.{z}' },
-];
-
 export function TerminalStream() {
   const [events, setEvents] = useState<LogEvent[]>([]);
   const scrollRef = useRef<HTMLDivElement>(null);
+  const ws = useWS();
 
   useEffect(() => {
-    const interval = setInterval(() => {
-      const template = eventTemplates[Math.floor(Math.random() * eventTemplates.length)];
-      const message = template.message
-        .replace('{x}', Math.floor(Math.random() * 256).toString())
-        .replace('{y}', Math.floor(Math.random() * 256).toString())
-        .replace('{z}', Math.floor(Math.random() * 256).toString());
-
+    const unsubscribe = ws.subscribe('log.new', (event) => {
+      const severity = String(event.data.event?.severity || '').toUpperCase();
+      const type: LogEvent['type'] =
+        severity === 'CRITICAL' || severity === 'ERROR'
+          ? 'critical'
+          : severity === 'WARNING' || severity === 'WARN'
+            ? 'warning'
+            : 'info';
       const newEvent: LogEvent = {
-        id: Date.now().toString(),
-        timestamp: new Date().toLocaleTimeString('en-US', { hour12: false }),
-        type: template.type,
-        message: message,
+        id: event.data.id,
+        timestamp: new Date(event.data.timestamp || Date.now()).toLocaleTimeString('en-US', { hour12: false }),
+        type,
+        message: event.data.message || 'Incoming event',
       };
-
-      setEvents(prev => {
-        const updated = [newEvent, ...prev];
-        return updated.slice(0, 50); // Keep last 50 events
-      });
-    }, 2000);
-
-    return () => clearInterval(interval);
-  }, []);
+      setEvents((prev) => [newEvent, ...prev].slice(0, 50));
+    });
+    return () => unsubscribe();
+  }, [ws]);
 
   useEffect(() => {
     if (scrollRef.current) {

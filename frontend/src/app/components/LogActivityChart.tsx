@@ -1,42 +1,24 @@
-import { useState, useEffect } from 'react';
+import { memo } from 'react';
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
+import { useQuery } from '@tanstack/react-query';
+import { dashboardService } from '../../api/services/dashboard.service';
 
 interface DataPoint {
   time: string;
   logs: number;
 }
 
-export function LogActivityChart() {
-  const [data, setData] = useState<DataPoint[]>([
-    { time: '00:00', logs: 45230 },
-    { time: '04:00', logs: 32100 },
-    { time: '08:00', logs: 67890 },
-    { time: '12:00', logs: 89234 },
-    { time: '16:00', logs: 102456 },
-    { time: '20:00', logs: 95432 },
-  ]);
-
-  // Simulate real-time updates
-  useEffect(() => {
-    const interval = setInterval(() => {
-      setData(prevData => {
-        const newData = [...prevData];
-        const lastValue = newData[newData.length - 1].logs;
-        const newValue = Math.max(0, lastValue + Math.floor((Math.random() - 0.3) * 10000));
-        
-        newData.shift();
-        const now = new Date();
-        newData.push({
-          time: now.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' }),
-          logs: newValue,
-        });
-        
-        return newData;
-      });
-    }, 5000);
-
-    return () => clearInterval(interval);
-  }, []);
+function LogActivityChartImpl() {
+  const query = useQuery({
+    queryKey: ['dashboard', 'logsChart'],
+    queryFn: dashboardService.logsChart,
+    refetchInterval: 10000,
+  });
+  const data: DataPoint[] =
+    query.data?.series?.map((item) => ({
+      time: item.time,
+      logs: item.count,
+    })) || [];
 
   return (
     <div className="bg-[#0f0f17] border border-[#1f1f2e] p-6">
@@ -86,3 +68,5 @@ export function LogActivityChart() {
     </div>
   );
 }
+
+export const LogActivityChart = memo(LogActivityChartImpl);

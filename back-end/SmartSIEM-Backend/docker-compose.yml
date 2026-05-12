@@ -1,0 +1,31 @@
+version: "3.9"
+
+services:
+  smartsiem-backend:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    env_file:
+      - .env
+    ports:
+      - "8080:8080"
+    depends_on:
+      - mongo
+    restart: unless-stopped
+
+  mongo:
+    image: mongo:7
+    ports:
+      - "27017:27017"
+    volumes:
+      - mongo_data:/data/db
+    restart: unless-stopped
+
+  # optional future message bus, kept disabled by default:
+  # kafka:
+  #   image: bitnami/kafka:3.7
+  #   ports:
+  #     - "9092:9092"
+
+volumes:
+  mongo_data:

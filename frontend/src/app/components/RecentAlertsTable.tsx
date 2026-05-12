@@ -1,6 +1,8 @@
-import { useState, useEffect } from 'react';
+import { useEffect, useState } from 'react';
 import { ChevronRight } from 'lucide-react';
 import { AlertDeepDiveModal } from './AlertDeepDiveModal';
+import { alertsService } from '../../api/services/alerts.service';
+import { useWS } from '../../hooks/useWS';
 
 interface Alert {
   id: string;
@@ -13,85 +15,9 @@ interface Alert {
   status: 'New' | 'In-Progress' | 'Resolved';
 }
 
-const generateRandomIP = () => {
-  return `${Math.floor(Math.random() * 256)}.${Math.floor(Math.random() * 256)}.${Math.floor(Math.random() * 256)}.${Math.floor(Math.random() * 256)}`;
-};
-
-const alertDescriptions = [
-  'SQL Injection attempt detected',
-  'Brute force attack on SSH port',
-  'Malware signature detected',
-  'Unauthorized access attempt',
-  'Port scanning activity',
-  'Suspicious file download',
-  'DDoS attack indicators',
-  'Data exfiltration attempt',
-];
-
-const logSources = [
-  'Firewall-01',
-  'Firewall-02',
-  'AWS-CloudTrail',
-  'Azure-Monitor',
-  'IDS-Primary',
-  'Web-Server-01',
-  'AD-Controller',
-  'VPN-Gateway',
-];
-
 export function RecentAlertsTable() {
-  const [alerts, setAlerts] = useState<Alert[]>([
-    {
-      id: '1',
-      timestamp: new Date().toISOString(),
-      severity: 'critical',
-      sourceIp: '203.45.67.89',
-      destination: '10.0.1.45:443',
-      description: 'SQL Injection attempt detected',
-      logSource: 'Web-Server-01',
-      status: 'New',
-    },
-    {
-      id: '2',
-      timestamp: new Date(Date.now() - 300000).toISOString(),
-      severity: 'high',
-      sourceIp: '192.168.1.100',
-      destination: '10.0.1.23:22',
-      description: 'Brute force attack on SSH port',
-      logSource: 'Firewall-01',
-      status: 'In-Progress',
-    },
-    {
-      id: '3',
-      timestamp: new Date(Date.now() - 600000).toISOString(),
-      severity: 'medium',
-      sourceIp: '172.16.0.45',
-      destination: '10.0.1.67:80',
-      description: 'Suspicious file download',
-      logSource: 'AWS-CloudTrail',
-      status: 'In-Progress',
-    },
-    {
-      id: '4',
-      timestamp: new Date(Date.now() - 900000).toISOString(),
-      severity: 'high',
-      sourceIp: '198.51.100.42',
-      destination: '10.0.1.12:3306',
-      description: 'Unauthorized access attempt',
-      logSource: 'AD-Controller',
-      status: 'Resolved',
-    },
-    {
-      id: '5',
-      timestamp: new Date(Date.now() - 1200000).toISOString(),
-      severity: 'low',
-      sourceIp: '10.0.5.23',
-      destination: '10.0.1.89:443',
-      description: 'Port scanning activity',
-      logSource: 'IDS-Primary',
-      status: 'Resolved',
-    },
-  ]);
+  const [alerts, setAlerts] = useState<Alert[]>([]);
+  const ws = useWS();
 
   const [selectedAlert, setSelectedAlert] = useState<Alert | null>(null);
   const [isModalOpen, setIsModalOpen] = useState(false);
@@ -107,26 +33,34 @@ export function RecentAlertsTable() {
   };
 
   useEffect(() => {
-    const interval = setInterval(() => {
-      if (Math.random() > 0.7) {
-        const severities: Alert['severity'][] = ['critical', 'high', 'medium', 'low'];
-        const newAlert: Alert = {
-          id: Date.now().toString(),
-          timestamp: new Date().toISOString(),
-          severity: severities[Math.floor(Math.random() * severities.length)],
-          sourceIp: generateRandomIP(),
-          destination: `10.0.${Math.floor(Math.random() * 256)}.${Math.floor(Math.random() * 256)}:${Math.floor(Math.random() * 9000) + 1000}`,
-          description: alertDescriptions[Math.floor(Math.random() * alertDescriptions.length)],
-          logSource: logSources[Math.floor(Math.random() * logSources.length)],
-          status: 'New',
-        };
-
-        setAlerts(prev => [newAlert, ...prev].slice(0, 10));
-      }
-    }, 10000);
-
-    return () => clearInterval(interval);
-  }, []);
+    void alertsService.list({ limit: 10, sort: '-trigger_time' }).then((response) => {
+      const mapped = response.data.map((item) => ({
+        id: item.id,
+        timestamp: item.trigger_time,
+        severity: item.severity.toLowerCase() as Alert['severity'],
+        sourceIp: item.source_ip || 'unknown',
+        destination: '-',
+        description: item.description,
+        logSource: item.rule_name,
+        status: item.status === 'NEW' ? 'New' : item.status === 'INVESTIGATING' ? 'In-Progress' : 'Resolved',
+      }));
+      setAlerts(mapped);
+    });
+    const unsubscribe = ws.subscribe('alert.new', (event) => {
+      const incoming: Alert = {
+        id: event.data.id,
+        timestamp: event.data.trigger_time,
+        severity: event.data.severity.toLowerCase() as Alert['severity'],
+        sourceIp: event.data.source_ip || 'unknown',
+        destination: '-',
+        description: event.data.description,
+        logSource: event.data.rule_name,
+        status: event.data.status === 'NEW' ? 'New' : event.data.status === 'INVESTIGATING' ? 'In-Progress' : 'Resolved',
+      };
+      setAlerts((prev) => [incoming, ...prev].slice(0, 10));
+    });
+    return () => unsubscribe();
+  }, [ws]);
 
   const getSeverityColor = (severity: string) => {
     switch (severity) {

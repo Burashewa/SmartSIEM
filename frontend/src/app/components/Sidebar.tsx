@@ -10,6 +10,8 @@ import {
   Cpu,
   Lock
 } from 'lucide-react';
+import { NavLink } from 'react-router-dom';
+import { useAuthStore } from '../../store/authStore';
 
 interface SidebarProps {
   currentPage: string;
@@ -17,19 +19,29 @@ interface SidebarProps {
 }
 
 const navItems = [
-  { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard },
-  { id: 'logs', label: 'Log Management', icon: FileText },
-  { id: 'alerts', label: 'Alerts', icon: AlertTriangle },
-  { id: 'threat-detection', label: 'Threat Detection', icon: Shield },
-  { id: 'detection-rules', label: 'Detection Rules', icon: GitBranch },
-  { id: 'ai-recommendations', label: 'AI Recommendations', icon: Cpu },
-  { id: 'access-control', label: 'Access Control', icon: Lock },
-  { id: 'reports', label: 'Reports', icon: FileBarChart },
-  { id: 'users', label: 'User Management', icon: Users },
-  { id: 'settings', label: 'Settings', icon: Settings },
+  { id: 'dashboard', path: '/dashboard', label: 'Dashboard', icon: LayoutDashboard },
+  { id: 'logs', path: '/logs', label: 'Log Management', icon: FileText },
+  { id: 'alerts', path: '/alerts', label: 'Alerts', icon: AlertTriangle },
+  { id: 'incidents', path: '/incidents', label: 'Incidents', icon: AlertTriangle },
+  { id: 'threat-detection', path: '/threat-detection', label: 'Threat Detection', icon: Shield },
+  { id: 'detection-rules', path: '/detection-rules', label: 'Detection Rules', icon: GitBranch },
+  { id: 'ai-recommendations', path: '/ai-recommendations', label: 'AI Recommendations', icon: Cpu },
+  { id: 'access-control', path: '/access-control', label: 'Access Control', icon: Lock },
+  { id: 'reports', path: '/reports', label: 'Reports', icon: FileBarChart },
+  { id: 'users', path: '/users', label: 'User Management', icon: Users },
+  { id: 'agents', path: '/agents', label: 'Agent Management', icon: Shield },
+  { id: 'settings', path: '/settings', label: 'Settings', icon: Settings },
 ];
 
 export function Sidebar({ currentPage, onNavigate }: SidebarProps) {
+  const role = (useAuthStore((state) => state.user?.role) || '').toLowerCase();
+  const isAdmin = role === 'admin' || role === 'administrator';
+  const visibleItems = navItems.filter((item) => {
+    if (['access-control', 'users', 'settings'].includes(item.id) && !isAdmin) {
+      return false;
+    }
+    return true;
+  });
   return (
     <div className="w-64 bg-[#0f0f17] border-r border-[#1f1f2e] flex flex-col">
       {/* Logo */}
@@ -43,12 +55,13 @@ export function Sidebar({ currentPage, onNavigate }: SidebarProps) {
 
       {/* Navigation */}
       <nav className="flex-1 py-6 px-3 overflow-y-auto">
-        {navItems.map((item) => {
+        {visibleItems.map((item) => {
           const Icon = item.icon;
           const isActive = currentPage === item.id;
           return (
-            <button
+            <NavLink
               key={item.id}
+              to={item.path}
               onClick={() => onNavigate(item.id)}
               className={`w-full flex items-center gap-3 px-3 py-2.5 mb-1 transition-colors ${
                 isActive
@@ -58,7 +71,7 @@ export function Sidebar({ currentPage, onNavigate }: SidebarProps) {
             >
               <Icon className="size-5" />
               <span className="text-sm">{item.label}</span>
-            </button>
+            </NavLink>
           );
         })}
       </nav>
