@@ -5,14 +5,21 @@ import { useState } from "react";
 export function DeveloperIntegration() {
   const [copied, setCopied] = useState(false);
 
-  const codeSnippet = `POST /logs
+  const codeSnippet = `POST /ingest
 Authorization: Bearer API_KEY
 Content-Type: application/json
 
 {
-  "event": "login_failed",
-  "ip": "192.168.1.1",
-  "timestamp": "2026-05-04T10:00:00Z"
+  "event_id": "550e8400-e29b-41d4-a716-446655440000",
+  "timestamp": "2026-05-10T15:30:00.000Z",
+  "source": "smartsiem-agent",
+  "event": "authentication",
+  "action": "login",
+  "status": "failed",
+  "user": "jdoe",
+  "ip": "203.0.113.42",
+  "deviceId": "device-abc-001",
+  "payload": { "reason": "invalid_credentials" }
 }`;
 
   const handleCopy = () => {
@@ -103,7 +110,7 @@ Content-Type: application/json
                 </div>
                 <pre className="p-6 text-sm overflow-x-auto">
                   <code className="text-gray-300">
-                    <span className="text-pink-400">POST</span> <span className="text-cyan-400">/logs</span>
+                    <span className="text-pink-400">POST</span> <span className="text-cyan-400">/ingest</span>
                     {"\n"}
                     <span className="text-purple-400">Authorization:</span> <span className="text-yellow-300">Bearer</span> <span className="text-emerald-400">API_KEY</span>
                     {"\n"}
@@ -111,11 +118,15 @@ Content-Type: application/json
                     {"\n\n"}
                     <span className="text-gray-500">{"{"}</span>
                     {"\n  "}
-                    <span className="text-indigo-400">"event"</span>: <span className="text-emerald-400">"login_failed"</span>,
+                    <span className="text-indigo-400">"event_id"</span>: <span className="text-emerald-400">"550e8400-e29b-41d4-a716-446655440000"</span>,
                     {"\n  "}
-                    <span className="text-indigo-400">"ip"</span>: <span className="text-emerald-400">"192.168.1.1"</span>,
+                    <span className="text-indigo-400">"event"</span>: <span className="text-emerald-400">"authentication"</span>,
                     {"\n  "}
-                    <span className="text-indigo-400">"timestamp"</span>: <span className="text-emerald-400">"2026-05-04T10:00:00Z"</span>
+                    <span className="text-indigo-400">"action"</span>: <span className="text-emerald-400">"login"</span>,
+                    {"\n  "}
+                    <span className="text-indigo-400">"status"</span>: <span className="text-emerald-400">"failed"</span>,
+                    {"\n  "}
+                    <span className="text-indigo-400">"ip"</span>: <span className="text-emerald-400">"203.0.113.42"</span>
                     {"\n"}
                     <span className="text-gray-500">{"}"}</span>
                   </code>

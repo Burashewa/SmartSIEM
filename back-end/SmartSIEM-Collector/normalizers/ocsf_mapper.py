@@ -74,151 +74,109 @@ class LogToOCSFMapper:
         self._result = result
         self._log_type = (result.log_type or "unknown").strip().lower()
         self._fields = dict(result.fields or {})
-        self._event = self._fields.get("event") if isinstance(self._fields.get("event"), dict) else {}
-        self._source = self._fields.get("source") if isinstance(self._fields.get("source"), dict) else {}
-        self._destination = (
-            self._fields.get("destination")
-            if isinstance(self._fields.get("destination"), dict)
-            else {}
-        )
-        self._user = self._fields.get("user") if isinstance(self._fields.get("user"), dict) else {}
-        self._host = self._fields.get("host") if isinstance(self._fields.get("host"), dict) else {}
-        self._observer = (
-            self._fields.get("observer") if isinstance(self._fields.get("observer"), dict) else {}
-        )
-        self._network = (
-            self._fields.get("network") if isinstance(self._fields.get("network"), dict) else {}
-        )
-        self._service = (
-            self._fields.get("service") if isinstance(self._fields.get("service"), dict) else {}
-        )
-        self._process = (
-            self._fields.get("process") if isinstance(self._fields.get("process"), dict) else {}
-        )
+        self._flattened_fields = self._flatten_nested(self._fields)
 
     def map(self) -> dict[str, Any]:
-        """Return transformed nested normalized event."""
+        """Return transformed flat normalized event."""
         ecs_action_meta = self._ecs_action_and_meta()
-        category = (
-            self._pick_nested(self._event, "category") or ecs_action_meta["category"]
+        mapped: dict[str, Any] = dict(self._fields)
+
+        event_id = self._coerce_string(self._pick_field("event_id", "eventId", "EventID", "id"))
+        timestamp = self._normalize_timestamp(
+            self._pick_field("timestamp", "@timestamp", "EventReceivedTime", "time")
         )
-        severity = (
-            self._pick_nested(self._event, "severity") or ecs_action_meta["severity"]
+        source = self._normalize_source(
+            self._pick_field(
+                "source",
+                "source_name",
+                "observer.product",
+                "observer_product",
+                "Hostname",
+                "hostname",
+            )
         )
-        outcome = (
-            self._pick_nested(self._event, "outcome") or ecs_action_meta["outcome"]
+        severity = self._determine_severity()
+        status = self._normalize_status(
+            self._pick_field("status", "result", "event.outcome", "outcome")
         )
-        event_action = (
-            self._pick_nested(self._event, "action")
-            or self._pick_field("event_action", "ecs_action")
+        action = (
+            self._coerce_string(
+                self._pick_field("action", "event.action", "event_action", "ecs_action")
+            )
             or ecs_action_meta["event_action"]
         )
-        timestamp = self._normalize_timestamp(
-            self._pick_field("timestamp", "EventReceivedTime", "time")
+        event_name = (
+            self._normalize_event_name(self._pick_field("event", "eventName", "event_name"))
+            or action
+            or self._log_type
+            or "unknown"
         )
-        source_port = self._to_int(
-            self._pick_nested(self._source, "port")
-            or self._pick_field("source_port", "src_port", "client_port", "port")
-        )
-        destination_port = self._to_int(
-            self._pick_nested(self._destination, "port")
-            or self._pick_field("destination_port", "dest_port", "dst_port", "dport")
-        )
-        source_geo = self._source.get("geo") if isinstance(self._source.get("geo"), dict) else {}
-        source_host = self._source.get("host") if isinstance(self._source.get("host"), dict) else {}
-        destination_host = (
-            self._destination.get("host")
-            if isinstance(self._destination.get("host"), dict)
-            else {}
+        user = self._normalize_user(
+            self._pick_field(
+                "user",
+                "username",
+                "user.name",
+                "AccountName",
+                "TargetUserName",
+                "ruser",
+                "logname",
+            )
         )
 
-        mapped: dict[str, Any] = {
-            "time": timestamp,
-            "event": {
-                "id": str(
-                    self._pick_nested(self._event, "id")
-                    or self._pick_field("event_id", "EventID", "id")
-                    or ""
-                ),
-                "category": category,
-                "type": str(
-                    self._pick_nested(self._event, "type")
-                    or self._pick_field("event_type", "type")
-                    or ecs_action_meta["event_type"]
-                    or "start"
-                ),
-                "action": str(event_action),
-                "outcome": outcome,
+        ip_value = self._coerce_string(
+            self._pick_field("ip", "source.ip", "destination.ip", "src_ip", "dst_ip")
+        )
+        device_id = self._coerce_string(
+            self._pick_field("deviceId", "device_id", "host.name", "hostname", "Hostname")
+        )
+        session_id = self._coerce_string(self._pick_field("sessionId", "session_id"))
+        endpoint = self._coerce_string(self._pick_field("endpoint", "url.path", "path"))
+        method = self._coerce_string(self._pick_field("method", "http.request.method"))
+        resource = self._coerce_string(self._pick_field("resource"))
+
+        message = self._coerce_string(
+            self._pick_field("message", "Message", "msg", "log", "line", "rawLine")
+        ) or self._result.raw
+        log_value = self._coerce_string(self._pick_field("log")) or message
+        line_value = self._coerce_string(self._pick_field("line")) or log_value
+        raw_line = self._coerce_string(self._pick_field("rawLine")) or line_value
+
+        payload = self._coerce_dict(self._pick_field("payload")) or {}
+        metadata = self._coerce_dict(self._pick_field("metadata")) or {}
+        tags = self._coerce_list(self._pick_field("tags")) or []
+        raw_obj = self._coerce_dict(self._pick_field("raw")) or {}
+
+        mapped.update(
+            {
+                "timestamp": timestamp,
+                "source": source or "unknown",
                 "severity": severity,
-            },
-            "source": {
-                "ip": (
-                    self._pick_nested(self._source, "ip")
-                    or self._pick_field("dhcp_ip", "ip", "client_ip", "src_ip", "source_ip")
-                ),
-                "port": source_port,
-                "host": {
-                    "name": self._pick_nested(source_host, "name")
-                    or self._pick_field("Hostname", "hostname", "source_host"),
-                },
-                "geo": {
-                    "country_name": self._pick_nested(source_geo, "country_name")
-                    or self._pick_field("country_name", "country"),
-                    "city_name": self._pick_nested(source_geo, "city_name")
-                    or self._pick_field("city_name", "city"),
-                },
-            },
-            "destination": {
-                "ip": self._pick_nested(self._destination, "ip")
-                or self._pick_field("destination_ip", "dst_ip", "dest_ip"),
-                "port": destination_port,
-                "host": {
-                    "name": self._pick_nested(destination_host, "name")
-                    or self._pick_field("destination_host", "dst_host", "dest_host"),
-                },
-            },
-            "user": {
-                "name": self._pick_nested(self._user, "name")
-                or self._pick_field(
-                    "user",
-                    "username",
-                    "AccountName",
-                    "TargetUserName",
-                    "ruser",
-                    "logname",
-                ),
-                "domain": self._pick_nested(self._user, "domain")
-                or self._pick_field("domain", "user_domain", "Domain"),
-            },
-            "host": {
-                "type": self._pick_nested(self._host, "type")
-                or self._pick_field("host_type", "device_type"),
-            },
-            "observer": {
-                "vendor": self._pick_nested(self._observer, "vendor")
-                or self._pick_field("vendor", "observer_vendor"),
-                "product": self._pick_nested(self._observer, "product")
-                or self._pick_field("product", "observer_product"),
-            },
-            "network": {
-                "transport": self._pick_nested(self._network, "transport")
-                or self._pick_field("transport", "proto", "protocol"),
-            },
-            "service": {
-                "name": self._pick_nested(self._service, "name")
-                or ecs_action_meta["service_name"]
-                or None,
-            },
-            "process": {
-                "command_line": self._pick_nested(self._process, "command_line")
-                or ecs_action_meta["command_line"]
-                or None,
-            },
-            "message": self._pick_field("message", "Message", "msg") or self._result.raw,
-            "raw_data": self._pick_field("raw_log") or self._result.raw,
-        }
-        mapped["service"] = {k: v for k, v in mapped["service"].items() if v is not None}
-        mapped["process"] = {k: v for k, v in mapped["process"].items() if v is not None}
+                "event": event_name,
+                "action": action or "",
+                "status": status,
+                "user": user or "",
+                "role": self._coerce_string(self._pick_field("role")) or "",
+                "deviceId": device_id or "",
+                "sessionId": session_id or "",
+                "endpoint": endpoint or "",
+                "method": method or "",
+                "resource": resource or "",
+                "payload": payload,
+                "metadata": metadata,
+                "tags": tags,
+                "message": message,
+                "log": log_value,
+                "line": line_value,
+                "rawLine": raw_line,
+                "raw": raw_obj,
+            }
+        )
+        if event_id:
+            mapped["event_id"] = event_id
+        if ip_value:
+            mapped["ip"] = ip_value
+        else:
+            mapped.pop("ip", None)
         return mapped
 
     def _ecs_action_and_meta(self) -> dict[str, Any]:
@@ -312,17 +270,61 @@ class LogToOCSFMapper:
         for key in keys:
             if key in self._fields:
                 return self._fields[key]
+            if key in self._flattened_fields:
+                return self._flattened_fields[key]
             lowered = key.lower()
             for existing_key, value in self._fields.items():
                 if existing_key.lower() == lowered:
                     return value
+            for existing_key, value in self._flattened_fields.items():
+                if existing_key.lower() == lowered:
+                    return value
         return None
 
-    def _pick_nested(self, data: dict[str, Any], key: str) -> Any:
-        value = data.get(key) if isinstance(data, dict) else None
-        if isinstance(value, str) and not value.strip():
+    def _coerce_string(self, value: Any) -> str | None:
+        if value is None:
             return None
-        return value
+        if isinstance(value, str):
+            text = value.strip()
+            return text or None
+        if isinstance(value, (int, float, bool)):
+            return str(value)
+        return None
+
+    def _coerce_dict(self, value: Any) -> dict[str, Any] | None:
+        if isinstance(value, dict):
+            return value
+        return None
+
+    def _coerce_list(self, value: Any) -> list[Any] | None:
+        if isinstance(value, list):
+            return value
+        return None
+
+    def _normalize_source(self, value: Any) -> str | None:
+        top = self._coerce_string(value)
+        if top:
+            return top
+        return (
+            self._coerce_string(
+                self._pick_field("source.name", "host.name", "observer.product", "observer_product")
+            )
+            or None
+        )
+
+    def _normalize_event_name(self, value: Any) -> str | None:
+        direct = self._coerce_string(value)
+        if direct:
+            return direct
+        return self._coerce_string(
+            self._pick_field("event.name", "event.category", "event.type", "event.action")
+        )
+
+    def _normalize_user(self, value: Any) -> str | None:
+        direct = self._coerce_string(value)
+        if direct:
+            return direct
+        return self._coerce_string(self._pick_field("user.name"))
 
     def _flatten_nested(
         self, fields: dict[str, Any], prefix: str = ""
@@ -375,10 +377,19 @@ class LogToOCSFMapper:
         return self._SEVERITY_MAP.get(text, "low")
 
     def _determine_status(self) -> str:
-        value = self._pick_field("status", "result", "outcome")
+        value = self._pick_field("status", "result", "outcome", "event.outcome")
         if value is None:
             return "unknown"
         return self._STATUS_MAP.get(str(value).strip().lower(), "unknown")
+
+    def _normalize_status(self, value: Any) -> str:
+        if value is None:
+            return self._determine_status()
+        mapped = self._STATUS_MAP.get(str(value).strip().lower())
+        if mapped:
+            return mapped
+        text = self._coerce_string(value)
+        return text or "unknown"
 
     def _normalize_timestamp(self, value: Any) -> str:
         if value is None:
@@ -407,6 +418,14 @@ class LogToOCSFMapper:
         except (ValueError, TypeError):
             return None
 
+    def _to_float(self, value: Any) -> float | None:
+        if value is None:
+            return None
+        try:
+            return float(str(value).strip())
+        except (ValueError, TypeError):
+            return None
+
 
 def normalize(
     log_type: str,
@@ -414,7 +433,7 @@ def normalize(
     raw: str | dict[str, Any],
     source: str = "",
 ) -> OCSFEvent:
-    """Normalize parser output using the OCSF mapper engine."""
+    """Normalize parser output into a flat SIEM event."""
     import logging
 
     logger = logging.getLogger(__name__)
@@ -423,10 +442,6 @@ def normalize(
     raw_text = raw if isinstance(raw, str) else json.dumps(raw, ensure_ascii=False, default=str)
     result = ParseResult(log_type=log_type, fields=fields, raw=raw_text)
     mapped = LogToOCSFMapper(result).map()
-    if "time" in mapped:
-        mapped["timestamp"] = mapped.pop("time")
-    if "raw_data" in mapped:
-        mapped["raw_log"] = mapped.pop("raw_data")
     out = OCSFEvent(**mapped)
     logger.debug("Normalize end keys=%d", len(out.model_dump(mode="json")))
     return out

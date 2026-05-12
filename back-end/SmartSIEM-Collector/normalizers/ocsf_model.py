@@ -1,4 +1,4 @@
-"""Nested normalized event model."""
+"""Flat normalized event model."""
 
 from __future__ import annotations
 
@@ -9,20 +9,29 @@ from pydantic import BaseModel, Field
 
 
 class OCSFEvent(BaseModel):
-    """Normalized event in nested transport-agnostic structure."""
+    """Normalized event in flat transport-agnostic structure."""
 
     timestamp: str = Field(default="")
-    event: dict[str, Any] = Field(default_factory=dict)
-    source: dict[str, Any] = Field(default_factory=dict)
-    destination: dict[str, Any] = Field(default_factory=dict)
-    user: dict[str, Any] = Field(default_factory=dict)
-    host: dict[str, Any] = Field(default_factory=dict)
-    observer: dict[str, Any] = Field(default_factory=dict)
-    network: dict[str, Any] = Field(default_factory=dict)
-    service: dict[str, Any] = Field(default_factory=dict)
-    process: dict[str, Any] = Field(default_factory=dict)
+    source: str = Field(default="")
+    severity: str = Field(default="")
+    event: str = Field(default="")
+    action: str = Field(default="")
+    status: str = Field(default="")
+    user: str = Field(default="")
+    role: str = Field(default="")
+    deviceId: str = Field(default="")
+    sessionId: str = Field(default="")
+    endpoint: str = Field(default="")
+    method: str = Field(default="")
+    resource: str = Field(default="")
+    payload: dict[str, Any] = Field(default_factory=dict)
+    metadata: dict[str, Any] = Field(default_factory=dict)
+    tags: list[Any] = Field(default_factory=list)
     message: str = Field(default="")
-    raw_log: str = Field(default="")
+    log: str = Field(default="")
+    line: str = Field(default="")
+    rawLine: str = Field(default="")
+    raw: dict[str, Any] = Field(default_factory=dict)
 
     model_config = {"extra": "allow", "str_strip_whitespace": True}
 

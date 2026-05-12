@@ -43,6 +43,7 @@ import sys
 import time
 import urllib.error
 import urllib.request
+import uuid
 from datetime import datetime, timezone
 
 
@@ -94,6 +95,38 @@ def get_worker_stats(worker_url: str) -> tuple[int, object | str | None]:
     return _request_json(f"{worker_url.rstrip('/')}/stats", method="GET")
 
 
+def to_new_contract_event(payload: dict[str, object]) -> dict[str, object]:
+    """Attach the new ingest contract fields while keeping legacy keys for compatibility tests."""
+    event = dict(payload)
+    event.setdefault("event_id", str(uuid.uuid4()))
+    event.setdefault("timestamp", iso_now())
+    event.setdefault("source", "smartsiem-agent")
+    event.setdefault("deviceId", "test-device-001")
+
+    event_type = str(event.get("event_type", "")).strip().upper()
+    auth_fail_types = {"AUTH_FAIL"}
+    auth_success_types = {"AUTH_SUCCESS"}
+    if "event" not in event:
+        if event_type in auth_fail_types:
+            event["event"] = "authentication"
+            event.setdefault("action", "login")
+            event.setdefault("status", "failed")
+        elif event_type in auth_success_types:
+            event["event"] = "authentication"
+            event.setdefault("action", "login")
+            event.setdefault("status", "success")
+
+    if "user" not in event:
+        username = event.get("username")
+        user_id = event.get("user_id")
+        if isinstance(username, str) and username.strip():
+            event["user"] = username
+        elif isinstance(user_id, str) and user_id.strip():
+            event["user"] = user_id
+
+    return event
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(
         description="Send test logs through the collector to exercise detection-worker rules"
@@ -134,7 +167,10 @@ def main() -> int:
 
     def send(label: str, payload: object) -> None:
         try:
-            status, body = post_ingest(base, payload)
+            normalized_payload = (
+                to_new_contract_event(payload) if isinstance(payload, dict) else payload
+            )
+            status, body = post_ingest(base, normalized_payload)
             tail = body[:200] + ("…" if len(body) > 200 else "")
             print(f"[send-test] {label} -> HTTP {status}: {tail!r}")
         except urllib.error.URLError as exc:
@@ -144,7 +180,7 @@ def main() -> int:
     def send_many(label: str, payloads: list[dict[str, object]]) -> None:
         """Single HTTP request with a JSON array (collector processes each element)."""
         try:
-            status, body = post_ingest(base, payloads)
+            status, body = post_ingest(base, [to_new_contract_event(p) for p in payloads])
             tail = body[:200] + ("…" if len(body) > 200 else "")
             print(f"[send-test] {label} ({len(payloads)} logs) -> HTTP {status}: {tail!r}")
         except urllib.error.URLError as exc:

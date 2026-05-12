@@ -604,39 +604,70 @@ function SendingLogsSection({
   copyCode: (code: string, id: string) => void;
   copiedCode: string | null;
 }) {
-  const restApiExample = `POST https://api.securestream.io/v1/logs
+  const restApiExample = `POST https://collector.smartsiem.local/ingest
 Authorization: Bearer YOUR_API_KEY
 Content-Type: application/json
 
 {
-  "event": "login_failed",
-  "ip": "192.168.1.1",
-  "timestamp": "2026-05-04T10:30:00Z",
+  "event_id": "550e8400-e29b-41d4-a716-446655440000",
+  "timestamp": "2026-05-10T15:30:00.000Z",
+  "source": "smartsiem-agent",
+  "severity": "high",
+  "event": "authentication",
+  "action": "login",
+  "status": "failed",
+  "user": "jdoe",
+  "role": "analyst",
+  "ip": "203.0.113.42",
+  "deviceId": "device-abc-001",
+  "sessionId": "sess-7f3c9a2b",
+  "endpoint": "/api/v1/auth/login",
+  "method": "POST",
+  "resource": "/accounts/self",
+  "payload": {
+    "reason": "invalid_credentials",
+    "attempt": 3,
+    "mfa": false
+  },
   "metadata": {
-    "username": "admin",
-    "user_agent": "Mozilla/5.0...",
-    "country": "US"
-  }
+    "tenant": "acme",
+    "region": "us-east-1"
+  },
+  "message": "Primary human-readable log line for storage and UI."
 }`;
 
-  const batchExample = `POST https://api.securestream.io/v1/logs/batch
+  const authNote = `agentId and userId are resolved from Authorization: Bearer <agent-api-key>
+by upstream auth middleware and injected server-side.
+Do not include agentId/userId in request body payloads.`;
+
+  const batchExample = `POST https://collector.smartsiem.local/ingest
 Authorization: Bearer YOUR_API_KEY
 Content-Type: application/json
 
-{
-  "logs": [
-    {
-      "event": "login_success",
-      "ip": "192.168.1.100",
-      "timestamp": "2026-05-04T10:00:00Z"
-    },
-    {
-      "event": "file_access",
-      "ip": "192.168.1.100",
-      "timestamp": "2026-05-04T10:00:05Z"
-    }
-  ]
-}`;
+[
+  {
+    "event_id": "550e8400-e29b-41d4-a716-446655440001",
+    "timestamp": "2026-05-10T15:31:00.000Z",
+    "source": "smartsiem-agent",
+    "event": "authentication",
+    "action": "login",
+    "status": "failed",
+    "user": "jdoe",
+    "ip": "203.0.113.42",
+    "deviceId": "device-abc-001"
+  },
+  {
+    "event_id": "550e8400-e29b-41d4-a716-446655440002",
+    "timestamp": "2026-05-10T15:32:00.000Z",
+    "source": "smartsiem-agent",
+    "event": "authentication",
+    "action": "login",
+    "status": "success",
+    "user": "jdoe",
+    "ip": "203.0.113.42",
+    "deviceId": "device-abc-001"
+  }
+]`;
 
   const sdkExample = `import { SecureStream } from '@securestream/sdk';
 
@@ -677,21 +708,21 @@ await client.logBatch([
         <div className="p-5 rounded-lg bg-white/5 border border-white/10">
           <div className="flex items-center gap-2 mb-2">
             <div className="px-2 py-1 rounded bg-indigo-500/20 text-indigo-400 text-xs">POST</div>
-            <code className="text-sm">/v1/logs</code>
+            <code className="text-sm">/ingest</code>
           </div>
-          <p className="text-sm text-gray-400">Send a single security event</p>
+          <p className="text-sm text-gray-400">Send one event object or an array of event objects</p>
         </div>
 
         <h3 className="text-2xl">Example Request</h3>
         <CodeBlock code={restApiExample} language="http" id="logs-1" copyCode={copyCode} copiedCode={copiedCode} />
+        <CodeBlock code={authNote} language="text" id="logs-auth-note" copyCode={copyCode} copiedCode={copiedCode} />
 
         <div className="p-6 rounded-xl bg-indigo-500/10 border border-indigo-500/20">
-          <h4 className="mb-3">Response (201 Created)</h4>
+            <h4 className="mb-3">Response (202 Accepted)</h4>
           <pre className="text-sm text-gray-300">
             <code>
               {`{
-  "id": "evt_abc123",
-  "status": "received",
+  "status": "accepted",
   "timestamp": "2026-05-04T10:30:00.123Z"
 }`}
             </code>
@@ -702,15 +733,15 @@ await client.logBatch([
       <div id="batch-upload" className="space-y-4">
         <h2 className="text-3xl">Batch Upload</h2>
         <p className="text-gray-300 leading-relaxed">
-          For high-volume scenarios, use the batch endpoint to send multiple events in a single request:
+          For high-volume scenarios, send a JSON array to the same endpoint:
         </p>
 
         <div className="p-5 rounded-lg bg-white/5 border border-white/10">
           <div className="flex items-center gap-2 mb-2">
             <div className="px-2 py-1 rounded bg-purple-500/20 text-purple-400 text-xs">POST</div>
-            <code className="text-sm">/v1/logs/batch</code>
+            <code className="text-sm">/ingest</code>
           </div>
-          <p className="text-sm text-gray-400">Send up to 1,000 events per request</p>
+          <p className="text-sm text-gray-400">Send up to 1,000 event objects in one array</p>
         </div>
 
         <CodeBlock code={batchExample} language="json" id="logs-2" copyCode={copyCode} copiedCode={copiedCode} />
@@ -768,51 +799,81 @@ function LogFormatSection({
   copiedCode: string | null;
 }) {
   const schemaExample = `{
-  "event": "string",        // Required: Event type identifier
-  "ip": "string",           // Required: Source IP address
-  "timestamp": "string",    // Required: ISO-8601 timestamp
-  "user_id": "string",      // Optional: User identifier
-  "session_id": "string",   // Optional: Session identifier
-  "severity": "string",     // Optional: low|medium|high|critical
-  "metadata": {             // Optional: Additional context
-    "key": "value"
-  }
+  "event_id": "string (uuid)",
+  "timestamp": "string (ISO-8601)",
+  "source": "string",
+  "severity": "low|medium|high|critical",
+  "event": "string",
+  "action": "string",
+  "status": "failed|success|...",
+  "user": "string",
+  "role": "string",
+  "ip": "string",
+  "deviceId": "string",
+  "sessionId": "string",
+  "endpoint": "string",
+  "method": "string",
+  "resource": "string",
+  "payload": {},
+  "userAgent": "string",
+  "latitude": 0.0,
+  "longitude": 0.0,
+  "lat": "string",
+  "lon": "string",
+  "tags": ["string"],
+  "metadata": {},
+  "raw": {},
+  "message": "string",
+  "log": "string",
+  "line": "string",
+  "rawLine": "string"
 }`;
 
   const examplesCode = `// Login failure
 {
-  "event": "login_failed",
-  "ip": "192.168.1.1",
-  "timestamp": "2026-05-04T10:00:00Z",
+  "event_id": "550e8400-e29b-41d4-a716-446655440000",
+  "timestamp": "2026-05-10T15:30:00.000Z",
+  "source": "smartsiem-agent",
+  "event": "authentication",
+  "action": "login",
+  "status": "failed",
+  "user": "jdoe",
+  "ip": "203.0.113.42",
+  "deviceId": "device-abc-001",
   "metadata": {
-    "username": "admin",
-    "attempts": 5
+    "tenant": "acme"
   }
 }
 
-// Brute force attack detected
+// Brute force indicator
 {
-  "event": "brute_force_detected",
-  "ip": "203.0.113.0",
-  "timestamp": "2026-05-04T10:05:00Z",
+  "event_id": "550e8400-e29b-41d4-a716-446655440001",
+  "timestamp": "2026-05-10T15:31:00.000Z",
+  "source": "smartsiem-agent",
+  "event": "authentication",
+  "action": "login",
+  "status": "failed",
+  "user": "jdoe",
+  "ip": "203.0.113.42",
+  "deviceId": "device-abc-001",
   "severity": "critical",
-  "metadata": {
-    "failed_attempts": 25,
-    "time_window": "5m"
+  "payload": {
+    "reason": "invalid_credentials",
+    "attempt": 5
   }
 }
 
-// Suspicious file access
+// Successful login
 {
-  "event": "file_access",
-  "ip": "10.0.0.50",
-  "timestamp": "2026-05-04T10:10:00Z",
-  "user_id": "usr_123",
-  "severity": "high",
-  "metadata": {
-    "file_path": "/etc/passwd",
-    "action": "read"
-  }
+  "event_id": "550e8400-e29b-41d4-a716-446655440002",
+  "timestamp": "2026-05-10T15:32:00.000Z",
+  "source": "smartsiem-agent",
+  "event": "authentication",
+  "action": "login",
+  "status": "success",
+  "user": "jdoe",
+  "ip": "203.0.113.42",
+  "deviceId": "device-abc-001"
 }`;
 
   return (

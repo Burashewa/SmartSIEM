@@ -65,6 +65,29 @@ class HttpApiServer:
             return f"http:{forwarded.split(',')[0].strip()}"
         return "http:unknown"
 
+    def _forwarded_identity(self, request: Request) -> dict[str, str]:
+        """
+        Trust identity headers injected by upstream auth middleware/proxy.
+
+        Collector does not validate bearer tokens directly; it only forwards
+        resolved identity values when present.
+        """
+        mapping = {
+            "agentId": ("x-agent-id", "x-agentid"),
+            "userId": ("x-user-id", "x-userid"),
+        }
+        identity: dict[str, str] = {}
+        for key, header_names in mapping.items():
+            value = ""
+            for header in header_names:
+                raw = request.headers.get(header)
+                if isinstance(raw, str) and raw.strip():
+                    value = raw.strip()
+                    break
+            if value:
+                identity[key] = value
+        return identity
+
     async def _handle_health(self) -> dict[str, str]:
         """Health check endpoint."""
         return {"status": "ok"}
@@ -90,10 +113,21 @@ class HttpApiServer:
             return Response(status_code=500, content="Internal error")
 
         payloads: list[str]
+        identity = self._forwarded_identity(request)
+
+        def _merge_identity(payload: dict[str, object]) -> dict[str, object]:
+            if not identity:
+                return payload
+            merged = dict(payload)
+            for key, value in identity.items():
+                if not isinstance(merged.get(key), str) or not str(merged.get(key)).strip():
+                    merged[key] = value
+            return merged
+
         if isinstance(raw, list):
-            payloads = [json.dumps(p) for p in raw if isinstance(p, dict)]
+            payloads = [json.dumps(_merge_identity(p)) for p in raw if isinstance(p, dict)]
         elif isinstance(raw, dict):
-            payloads = [json.dumps(raw)]
+            payloads = [json.dumps(_merge_identity(raw))]
         else:
             return Response(status_code=400, content="Expected JSON object or array")
 

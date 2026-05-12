@@ -4,6 +4,7 @@ import json
 import logging
 import re
 from dataclasses import dataclass
+from typing import Any
 
 from parsers.regex_rules import get_line_rules, get_message_rules
 
@@ -17,10 +18,10 @@ class ParseResult:
     """Result of parsing a single log entry."""
 
     log_type: str
-    fields: dict[str, str | dict[str, object] | list[object]]
+    fields: dict[str, Any]
     raw: str
 
-    def to_dict(self) -> dict[str, str | dict[str, object] | list[object]]:
+    def to_dict(self) -> dict[str, Any]:
         """Convert to dict for downstream normalization."""
         return {"log_type": self.log_type, "fields": self.fields, "raw": self.raw}
 
@@ -75,7 +76,8 @@ class BaseParser:
         Parse JSON payload and preserve all keys with original casing.
 
         If message text exists (Message/message/msg/log/raw/event), run regex
-        parsing on that text and merge extracted fields on top.
+        parsing on that text and merge extracted fields without overriding
+        original API JSON keys.
         """
         try:
             data = json.loads(raw)
@@ -95,24 +97,23 @@ class BaseParser:
             return ParseResult(log_type="json_invalid", fields={}, raw=raw)
 
         # Preserve every JSON key-value pair with original key casing.
-        json_fields: dict[str, str | dict[str, object] | list[object]] = {}
+        json_fields: dict[str, Any] = {}
         for k, v in data.items():
-            if isinstance(v, (dict, list)):
-                json_fields[k] = v
-            elif v is None:
-                json_fields[k] = ""
-            else:
-                json_fields[k] = str(v)
+            # Preserve native JSON scalar types (bool/int/float) so downstream
+            # mappers can normalize richer schemas without lossy string casts.
+            json_fields[k] = v
 
         message = self._find_internal_message_text(data)
         if not message:
             message = self._synthesize_syslog_line_from_nxlog(data)
         if message:
-            # Run regex on internal text; merge extracted fields after
-            # initial JSON field extraction.
+            # Run regex on internal text. Merge only missing keys so API JSON
+            # fields remain authoritative and unchanged.
             sub_result = self._parse_text(message, source)
             merged = dict(json_fields)
-            merged.update(sub_result.fields)
+            for key, value in sub_result.fields.items():
+                if key not in merged:
+                    merged[key] = value
             return ParseResult(
                 log_type=sub_result.log_type,
                 fields=merged,

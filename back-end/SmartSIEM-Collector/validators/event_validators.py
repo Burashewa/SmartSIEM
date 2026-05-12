@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import copy
 import ipaddress
+from datetime import datetime
 from typing import Any
 
 
@@ -76,28 +77,31 @@ class SIEMValidator:
                 errors.append(f"invalid ip format at {'.'.join(path)}")
 
     def _normalize_and_validate_severity(self, event: dict[str, Any], errors: list[str]) -> None:
-        event_obj = event.get("event")
-        if not isinstance(event_obj, dict):
-            return
-        severity = event_obj.get("severity")
+        severity = event.get("severity")
         if severity is None:
             return
         severity_text = str(severity).strip().lower()
-        event_obj["severity"] = severity_text
+        event["severity"] = severity_text
         if severity_text not in self.ALLOWED_SEVERITY:
-            errors.append("event.severity must be one of low, medium, high, critical")
+            errors.append("severity must be one of low, medium, high, critical")
 
     def _validate_required_fields(self, event: dict[str, Any], errors: list[str]) -> None:
         timestamp = event.get("timestamp")
         if not isinstance(timestamp, str) or not timestamp.strip():
             errors.append("missing or invalid 'timestamp'")
+        else:
+            candidate = timestamp.strip().replace("Z", "+00:00")
+            try:
+                datetime.fromisoformat(candidate)
+            except ValueError:
+                errors.append("missing or invalid 'timestamp'")
 
         source = event.get("source")
-        if not isinstance(source, dict) or not source:
+        if not isinstance(source, str) or not source.strip():
             errors.append("missing or invalid 'source'")
 
-        event_obj = event.get("event")
-        if not isinstance(event_obj, dict) or not event_obj:
+        event_name = event.get("event")
+        if not isinstance(event_name, str) or not event_name.strip():
             errors.append("missing or invalid 'event'")
 
         device_id = event.get("deviceId")

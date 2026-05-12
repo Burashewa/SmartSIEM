@@ -4,6 +4,27 @@
  * detection engine expects (event_type, source_ip, raw_data, etc.).
  */
 
+const FAILED_LOGIN_EVENT_NAMES = [
+  'login_failed',
+  'failed_login',
+  'auth_failed',
+  'auth_login_failed',
+  'auth_login_failure',
+];
+
+const SUCCESS_LOGIN_EVENT_NAMES = ['login_success', 'auth_success', 'auth_login_success'];
+
+const EVENT_TYPE_BY_NAME = {
+  auth_fail: 'AUTH_FAIL',
+  auth_success: 'AUTH_SUCCESS',
+  proc_create: 'PROC_CREATE',
+  proc_access: 'PROC_ACCESS',
+  dns_query: 'DNS_QUERY',
+  file_modify: 'FILE_MODIFY',
+  net_conn: 'NET_CONN',
+  task_create: 'TASK_CREATE',
+};
+
 /**
  * @param {unknown} msg
  * @returns {boolean}
@@ -86,6 +107,12 @@ function buildRawData(collector) {
   if (typeof msg === 'string' && msg.trim() !== '' && base.message == null) {
     base.message = msg;
   }
+  if (collector.payload && typeof collector.payload === 'object' && !Array.isArray(collector.payload)) {
+    base = { .../** @type {Record<string, unknown>} */ (collector.payload), ...base };
+  }
+  if (collector.metadata && typeof collector.metadata === 'object' && !Array.isArray(collector.metadata)) {
+    base.metadata = /** @type {Record<string, unknown>} */ (collector.metadata);
+  }
 
   for (const [k, v] of Object.entries(proc)) {
     if (v != null && base[k] == null) base[k] = v;
@@ -95,6 +122,43 @@ function buildRawData(collector) {
   }
 
   return base;
+}
+
+/**
+ * @param {unknown} value
+ * @returns {string}
+ */
+function canonicalToken(value) {
+  return String(value ?? '')
+    .trim()
+    .toLowerCase()
+    .replace(/\s+/g, '_');
+}
+
+/**
+ * @param {Record<string, unknown>} collector
+ * @param {Record<string, unknown>} ev
+ * @returns {string | undefined}
+ */
+function deriveEventType(collector, ev) {
+  const explicitType = strOrUndef(collector.event_type);
+  if (explicitType) return explicitType;
+
+  const eventName = canonicalToken(ev.type || collector.event_name || collector.event);
+  const action = canonicalToken(ev.action || collector.action);
+  const status = canonicalToken(ev.outcome || collector.status);
+
+  if (FAILED_LOGIN_EVENT_NAMES.includes(eventName)) return 'AUTH_FAIL';
+  if (SUCCESS_LOGIN_EVENT_NAMES.includes(eventName)) return 'AUTH_SUCCESS';
+
+  const authish = eventName.includes('auth') || eventName.includes('login') || action.includes('login');
+  if (authish && ['failed', 'failure', 'error', 'denied', 'rejected'].includes(status)) return 'AUTH_FAIL';
+  if (authish && ['success', 'ok', 'passed', 'accepted'].includes(status)) return 'AUTH_SUCCESS';
+
+  if (EVENT_TYPE_BY_NAME[eventName]) return EVENT_TYPE_BY_NAME[eventName];
+  if (EVENT_TYPE_BY_NAME[action]) return EVENT_TYPE_BY_NAME[action];
+  if (eventName) return eventName.toUpperCase();
+  return undefined;
 }
 
 /**
@@ -119,10 +183,12 @@ function mapCollectorOcsfToDetectionEvent(collector) {
       ? /** @type {Record<string, unknown>} */ (collector.process)
       : {};
 
-  const userName = strOrUndef(usr.name);
+  const userName = strOrUndef(collector.username) || strOrUndef(usr.name) || strOrUndef(collector.user);
   const domain = strOrUndef(usr.domain);
+  const userFromMiddleware = strOrUndef(collector.userId) || strOrUndef(collector.user_id);
   const userId =
-    userName && domain ? `${domain}\\${userName}` : userName || domain || undefined;
+    userFromMiddleware ||
+    (userName && domain ? `${domain}\\${userName}` : userName || domain || undefined);
 
   const cmdLine = strOrUndef(proc.command_line);
   const processName =
@@ -140,8 +206,8 @@ function mapCollectorOcsfToDetectionEvent(collector) {
   return {
     ...collector,
     timestamp: collector.timestamp,
-    event_type: strOrUndef(ev.type),
-    source_ip: strOrUndef(src.ip),
+    event_type: deriveEventType(collector, ev),
+    source_ip: strOrUndef(src.ip) || strOrUndef(collector.ip),
     user_id: userId,
     username: userName,
     process_name: processName,
@@ -168,6 +234,7 @@ function normalizeInboundKafkaMessage(parsed) {
 }
 
 module.exports = {
+  FAILED_LOGIN_EVENT_NAMES,
   normalizeInboundKafkaMessage,
   isCollectorOcsfPayload,
 };

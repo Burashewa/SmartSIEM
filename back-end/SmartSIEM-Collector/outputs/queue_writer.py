@@ -223,7 +223,7 @@ class QueueWriter:
 
             validator = SIEMValidator()
             try:
-                db = client["SIEM"]
+                db = client["siem"] #dbg pt
                 coll = db["logs"]
                 dead_letter = db["dead_letter"]
                 for item in batch:
