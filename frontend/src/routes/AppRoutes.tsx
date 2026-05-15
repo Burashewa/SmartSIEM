@@ -71,6 +71,7 @@ export function AppRoutes() {
             }
           />
           <Route path="alerts" element={<AlertsPage />} />
+          <Route path="logs" element={<LogsPage />} />
           <Route path="incidents" element={<IncidentsPage />} />
           <Route path="threat-detection" element={<ThreatDetectionPage />} />
           <Route path="detection-rules" element={<DetectionRulesPage />} />
