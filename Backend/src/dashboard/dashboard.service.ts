@@ -37,12 +37,41 @@ export class DashboardService {
     @InjectModel(Alert.name) private readonly alertModel: Model<Alert>,
   ) {}
 
+  /**
+   * Fast path: counts only (no chart aggregations). Use for frequent polling.
+   */
+  async getKpi(user: AuthJwtPayload) {
+    return this.computeDashboardMetrics(user, new Date());
+  }
+
   async getSummary(user: AuthJwtPayload) {
     const now = new Date();
+    const lastDayStart = new Date(now.getTime() - 24 * 60 * 60 * 1000);
+    const logFilter = this.buildOwnershipFilter(user);
+    const alertFilter = this.buildOwnershipFilter(user);
+
+    const [metricsBlock, logActivity, alertsBySeverity, eventsBySource] = await Promise.all([
+      this.computeDashboardMetrics(user, now),
+      this.buildLogActivity(now, logFilter),
+      this.buildAlertsBySeverity(alertFilter),
+      this.buildEventsBySource(lastDayStart, now, logFilter),
+    ]);
+
+    return {
+      generatedAt: metricsBlock.generatedAt,
+      metrics: metricsBlock.metrics,
+      charts: {
+        logActivity,
+        alertsBySeverity,
+        eventsBySource,
+      },
+    };
+  }
+
+  private async computeDashboardMetrics(user: AuthJwtPayload, now: Date) {
     const todayStart = startOfDay(now);
     const yesterdayStart = addDays(todayStart, -1);
     const lastHourStart = new Date(now.getTime() - 60 * 60 * 1000);
-    const lastDayStart = new Date(now.getTime() - 24 * 60 * 60 * 1000);
     const logFilter = this.buildOwnershipFilter(user);
     const alertFilter = this.buildOwnershipFilter(user);
 
@@ -54,9 +83,6 @@ export class DashboardService {
       criticalThreats,
       criticalTriggeredToday,
       recentHighSeverityLogs,
-      logActivity,
-      alertsBySeverity,
-      eventsBySource,
     ] = await Promise.all([
       this.logModel.countDocuments({
         ...logFilter,
@@ -86,9 +112,6 @@ export class DashboardService {
         severity: { $in: ['high', 'critical'] },
         timestamp: { $gte: lastHourStart, $lte: now },
       }),
-      this.buildLogActivity(now, logFilter),
-      this.buildAlertsBySeverity(alertFilter),
-      this.buildEventsBySource(lastDayStart, now, logFilter),
     ]);
 
     const systemHealth = this.computeSystemHealth({
@@ -119,11 +142,6 @@ export class DashboardService {
           trendLabel: 'overall status',
           trendTone: systemHealth.tone,
         },
-      },
-      charts: {
-        logActivity,
-        alertsBySeverity,
-        eventsBySource,
       },
     };
   }

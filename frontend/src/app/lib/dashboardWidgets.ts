@@ -26,7 +26,12 @@ export interface RecentAlertRecord {
   severity: WidgetSeverity;
   sourceIp: string;
   destination: string;
+  /** Short narrative (table / modal); includes backend rollup message when deduped. */
   description: string;
+  /** Backend alert.message (may be “IP triggered rule N times…” when deduped). */
+  message?: string;
+  occurrenceCount?: number;
+  firstTriggeredAt?: string;
   logSource: string;
   status: 'New' | 'In-Progress' | 'Resolved';
   ruleId: string;
@@ -217,9 +222,11 @@ export function buildRecentAlerts(alerts: BackendAlertRecord[]): RecentAlertReco
         alertDetails.push(`Action: ${context.action}`);
       }
 
-      const description = alertDetails.length > 0
-        ? `${ruleName} - ${alertDetails.join(', ')}`
-        : ruleName;
+      const rollup = readPositiveInt(alert.occurrenceCount);
+      const backendMessage = readString(alert.message);
+      const narrative =
+        backendMessage ??
+        (alertDetails.length > 0 ? `${ruleName} - ${alertDetails.join(', ')}` : ruleName);
 
       return {
         id:
@@ -242,7 +249,10 @@ export function buildRecentAlerts(alerts: BackendAlertRecord[]): RecentAlertReco
           readString(context?.targetIp) ??
           readString(context?.path) ??
           'N/A',
-        description,
+        description: narrative,
+        message: backendMessage,
+        occurrenceCount: rollup,
+        firstTriggeredAt: readString(alert.firstTriggeredAt),
         logSource:
           readString(context?.source) ??
           readString(context?.logSource) ??
@@ -459,6 +469,17 @@ function roundToSingleDecimal(value: number): number {
   return Math.round(value * 10) / 10;
 }
 
+function readPositiveInt(value: unknown): number | undefined {
+  if (typeof value === 'number' && Number.isFinite(value) && value >= 1) {
+    return Math.min(Number.MAX_SAFE_INTEGER, Math.floor(value));
+  }
+  if (typeof value === 'string' && /^\d+$/.test(value.trim())) {
+    const n = parseInt(value.trim(), 10);
+    return n >= 1 ? n : undefined;
+  }
+  return undefined;
+}
+
 function readString(value: unknown): string | undefined {
   return typeof value === 'string' && value.trim() ? value.trim() : undefined;
 }
@@ -471,4 +492,176 @@ function asRecord(value: unknown): Record<string, unknown> | undefined {
   return value && typeof value === 'object' && !Array.isArray(value)
     ? (value as Record<string, unknown>)
     : undefined;
+}
+
+/** Recharts axis ticks: never show `0K` for small integers. */
+export function formatChartAxisCount(value: number): string {
+  const v = Math.abs(Number(value));
+  if (!Number.isFinite(v)) return '0';
+  if (v >= 1_000_000) return `${(v / 1_000_000).toFixed(v >= 10_000_000 ? 0 : 1)}M`;
+  if (v >= 10_000) return `${Math.round(v / 1000)}K`;
+  if (v >= 1000) return `${(v / 1000).toFixed(1)}K`;
+  return String(Math.round(v));
+}
+
+export interface LogActivitySeriesPoint {
+  time: string;
+  logs: number;
+}
+
+/** Parse log timestamps from API (ISO string, millis number, or rare `$date` shapes). */
+export function parseLogTimestamp(value: unknown): number | undefined {
+  if (typeof value === 'number' && Number.isFinite(value)) {
+    return value;
+  }
+  if (typeof value === 'string') {
+    const t = Date.parse(value);
+    if (!Number.isNaN(t)) return t;
+  }
+  if (value && typeof value === 'object' && !Array.isArray(value)) {
+    const rec = value as Record<string, unknown>;
+    const nested = rec.$date;
+    if (typeof nested === 'string' || typeof nested === 'number') {
+      const t = Date.parse(String(nested));
+      if (!Number.isNaN(t)) return t;
+    }
+  }
+  return undefined;
+}
+
+/**
+ * Bucket logs into time buckets. Expands the window to include actual log timestamps (so old data
+ * still draws) and widens bucket size when the span is long.
+ */
+export function buildLogActivitySeries(
+  logs: BackendLogRecord[],
+  opts?: { lookbackHours?: number; bucketMinutes?: number; maxBuckets?: number },
+): LogActivitySeriesPoint[] {
+  const lookbackHours = opts?.lookbackHours ?? 24;
+  const maxBuckets = opts?.maxBuckets ?? 40;
+  const preferredBucketMin = Math.max(5, Math.min(opts?.bucketMinutes ?? 60, 1440));
+  let bucketMs = preferredBucketMin * 60 * 1000;
+
+  const now = Date.now();
+  const defaultStart = now - lookbackHours * 60 * 60 * 1000;
+
+  const parsed = logs
+    .map((l) => parseLogTimestamp(l.timestamp))
+    .filter((t): t is number => t !== undefined);
+
+  let start = defaultStart;
+  let end = now;
+  if (parsed.length > 0) {
+    const minTs = Math.min(...parsed);
+    const maxTs = Math.max(...parsed);
+    start = Math.min(defaultStart, minTs);
+    end = Math.max(now, maxTs);
+    const cap = 30 * 24 * 60 * 60 * 1000;
+    start = Math.max(start, end - cap);
+  }
+
+  let span = end - start;
+  if (span < bucketMs) {
+    start = end - bucketMs;
+    span = bucketMs;
+  }
+
+  while (span / bucketMs > maxBuckets) {
+    bucketMs *= 2;
+  }
+
+  const bucketMinutesResolved = bucketMs / 60_000;
+  const firstBucket = Math.floor(start / bucketMs) * bucketMs;
+  const buckets = new Map<number, number>();
+
+  for (let t = firstBucket; t <= end; t += bucketMs) {
+    buckets.set(t, 0);
+  }
+
+  for (const log of logs) {
+    const ts = parseLogTimestamp(log.timestamp);
+    if (ts === undefined || ts < firstBucket || ts > end + bucketMs) continue;
+    const b = Math.floor(ts / bucketMs) * bucketMs;
+    buckets.set(b, (buckets.get(b) ?? 0) + 1);
+  }
+
+  return Array.from(buckets.entries())
+    .sort(([a], [b]) => a - b)
+    .map(([t, count]) => ({
+      time: formatActivityBucketLabel(t, bucketMinutesResolved),
+      logs: count,
+    }));
+}
+
+function formatActivityBucketLabel(ts: number, bucketMinutes: number): string {
+  const d = new Date(ts);
+  if (bucketMinutes >= 1440) {
+    return d.toLocaleString(undefined, { month: 'short', day: 'numeric' });
+  }
+  return d.toLocaleString(undefined, {
+    month: 'short',
+    day: 'numeric',
+    hour: 'numeric',
+    minute: bucketMinutes < 60 ? '2-digit' : undefined,
+  });
+}
+
+export interface EventsByUserAgentDatum {
+  /** Display key: account · agent */
+  source: string;
+  events: number;
+}
+
+/**
+ * Count logs by analyst account (`user`, often an email) and collecting `agentId`.
+ */
+export function buildEventsByUserAndAgent(
+  logs: BackendLogRecord[],
+  topN = 10,
+  /** `agentId` → display name from GET /api/agents */
+  agentNamesById?: Record<string, string>,
+): EventsByUserAgentDatum[] {
+  const counts = new Map<string, number>();
+
+  for (const log of logs) {
+    const accountRaw = readString(log.user);
+    const account =
+      accountRaw ??
+      extractEmailFromRaw(log.raw) ??
+      extractEmailFromRaw(log.payload as Record<string, unknown> | undefined) ??
+      'Unknown account';
+    const agentId = readString(log.agentId);
+    const registeredName = agentId ? agentNamesById?.[agentId]?.trim() : undefined;
+    const agentLabel = registeredName
+      ? registeredName
+      : agentId
+        ? `Agent ${agentId}`
+        : 'Unknown agent';
+    const key = `${account} · ${agentLabel}`;
+    counts.set(key, (counts.get(key) ?? 0) + 1);
+  }
+
+  return Array.from(counts.entries())
+    .sort((a, b) => b[1] - a[1])
+    .slice(0, topN)
+    .map(([source, events]) => ({ source, events }));
+}
+
+function extractEmailFromRaw(raw?: Record<string, unknown>): string | undefined {
+  const r = raw;
+  if (!r) return undefined;
+
+  const ctx =
+    asRecord(asRecord(r.rawEvent)?.context) ??
+    asRecord(r.context);
+  const fromCtx = readString(ctx?.email) ?? readString(asRecord(ctx?.body)?.email);
+  if (fromCtx?.includes('@')) return fromCtx;
+
+  const events = Array.isArray(r.events) ? r.events : [];
+  for (const ev of events) {
+    const c = asRecord(ev)?.context;
+    const em = readString(c?.email) ?? readString(asRecord(c?.body)?.email);
+    if (em?.includes('@')) return em;
+  }
+  return undefined;
 }

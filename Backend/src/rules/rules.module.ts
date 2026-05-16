@@ -9,6 +9,7 @@ import { RuleEngineService } from './engine/rule-engine.service';
 import { RuleLoaderService } from './engine/rule-loader.service';
 import { RuleContextService } from './engine/rule-context.service';
 import { RecommendationsModule } from '../recommendations/recommendations.module';
+import { ThreatIntelModule } from '../threat-intel/threat-intel.module';
 
 @Module({
   imports: [
@@ -18,6 +19,7 @@ import { RecommendationsModule } from '../recommendations/recommendations.module
     ]),
     AlertsModule,
     RecommendationsModule,
+    ThreatIntelModule,
   ],
   controllers: [RulesController],
   providers: [RulesService, RuleEngineService, RuleLoaderService, RuleContextService],

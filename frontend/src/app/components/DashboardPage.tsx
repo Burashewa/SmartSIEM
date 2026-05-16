@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { KPICard } from './KPICard';
 import { LogActivityChart } from './LogActivityChart';
 import { AlertsSeverityChart } from './AlertsSeverityChart';
@@ -10,32 +10,61 @@ import { PriorityAIRecommendations } from './PriorityAIRecommendations';
 import { TrendingUp, AlertTriangle, Shield, Activity } from 'lucide-react';
 import {
   fetchDashboardAlerts,
+  fetchDashboardKpi,
   fetchDashboardLogs,
   fetchDashboardSummary,
   type BackendAlertRecord,
   type BackendLogRecord,
   type DashboardSummaryResponse,
 } from '../api/dashboard';
+import { fetchAgents } from '../api/agents';
 import {
   buildAttackLocations,
   buildAttackLocationsFromAlerts,
+  buildEventsByUserAndAgent,
+  buildLogActivitySeries,
   buildRecentAlerts,
   buildStreamEvents,
 } from '../lib/dashboardWidgets';
 
+const KPI_POLL_MS = 1000;
+const FULL_REFRESH_MS = 10000;
+
 export function DashboardPage() {
   const [summary, setSummary] = useState<DashboardSummaryResponse | null>(null);
-  const [isLoading, setIsLoading] = useState(true);
+  const [liveMetrics, setLiveMetrics] = useState<DashboardSummaryResponse['metrics'] | null>(null);
+  const [isChartsLoading, setIsChartsLoading] = useState(true);
+  const [isKpiLoading, setIsKpiLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [kpiError, setKpiError] = useState<string | null>(null);
   const [logs, setLogs] = useState<BackendLogRecord[]>([]);
   const [alerts, setAlerts] = useState<BackendAlertRecord[]>([]);
   const [isActivityLoading, setIsActivityLoading] = useState(true);
   const [isAlertsLoading, setIsAlertsLoading] = useState(true);
   const [activityError, setActivityError] = useState<string | null>(null);
   const [alertsError, setAlertsError] = useState<string | null>(null);
+  const [agentNamesById, setAgentNamesById] = useState<Record<string, string>>({});
 
   useEffect(() => {
     let isMounted = true;
+
+    const loadKpi = async () => {
+      try {
+        const kpi = await fetchDashboardKpi();
+        if (!isMounted) return;
+        setLiveMetrics(kpi.metrics);
+        setKpiError(null);
+      } catch (loadError) {
+        if (!isMounted) return;
+        const message =
+          loadError instanceof Error ? loadError.message : 'Failed to load dashboard KPI';
+        setKpiError(message);
+      } finally {
+        if (isMounted) {
+          setIsKpiLoading(false);
+        }
+      }
+    };
 
     const loadSummary = async () => {
       try {
@@ -50,7 +79,7 @@ export function DashboardPage() {
         setError(message);
       } finally {
         if (isMounted) {
-          setIsLoading(false);
+          setIsChartsLoading(false);
         }
       }
     };
@@ -91,37 +120,64 @@ export function DashboardPage() {
       }
     };
 
-    void loadSummary();
-    void loadLogs();
-    void loadAlerts();
-    const interval = window.setInterval(() => {
+    const loadAgents = async () => {
+      try {
+        const agents = await fetchAgents();
+        if (!isMounted) return;
+        setAgentNamesById(Object.fromEntries(agents.map((a) => [a.agentId, a.name])));
+      } catch {
+        if (!isMounted) return;
+        setAgentNamesById({});
+      }
+    };
+
+    void Promise.all([loadKpi(), loadSummary(), loadLogs(), loadAlerts(), loadAgents()]);
+
+    const kpiInterval = window.setInterval(() => {
+      void loadKpi();
+    }, KPI_POLL_MS);
+
+    const fullInterval = window.setInterval(() => {
       void loadSummary();
       void loadLogs();
       void loadAlerts();
-    }, 30000);
+      void loadAgents();
+    }, FULL_REFRESH_MS);
 
     return () => {
       isMounted = false;
-      window.clearInterval(interval);
+      window.clearInterval(kpiInterval);
+      window.clearInterval(fullInterval);
     };
   }, []);
 
-  const metrics = summary?.metrics;
+  const metrics = liveMetrics ?? summary?.metrics;
   const charts = summary?.charts;
+  const kpiLoading = isKpiLoading && !metrics;
+
   const alertAttackLocations = buildAttackLocationsFromAlerts(alerts);
   const attackLocations =
     alertAttackLocations.length > 0 ? alertAttackLocations : buildAttackLocations(logs);
   const streamEvents = buildStreamEvents(logs);
   const recentAlerts = buildRecentAlerts(alerts);
 
+  const logActivityFromLogs = useMemo(
+    () => buildLogActivitySeries(logs, { lookbackHours: 24, bucketMinutes: 60 }),
+    [logs],
+  );
+  const logsByAccountAgent = useMemo(
+    () => buildEventsByUserAndAgent(logs, 10, agentNamesById),
+    [logs, agentNamesById],
+  );
+
   return (
     <div className="space-y-6">
-      {/* KPI Cards */}
+      {/* KPI Cards — fast /api/dashboard/kpi poll */}
       <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-4">
         <KPICard
           title="Total Logs Today"
-          value={metrics ? metrics.logsToday.value.toLocaleString() : isLoading ? '...' : '0'}
-          trend={metrics?.logsToday.trend ?? (isLoading ? 'Loading' : '0%')}
+          value={metrics ? metrics.logsToday.value.toLocaleString() : kpiLoading ? '...' : '0'}
+          trend={metrics?.logsToday.trend ?? (kpiLoading ? 'Loading' : '0%')}
           trendLabel={metrics?.logsToday.trendLabel ?? 'vs yesterday'}
           trendTone={metrics?.logsToday.trendTone ?? 'neutral'}
           icon={TrendingUp}
@@ -130,8 +186,8 @@ export function DashboardPage() {
         />
         <KPICard
           title="Active Alerts"
-          value={metrics ? metrics.activeAlerts.value.toString() : isLoading ? '...' : '0'}
-          trend={metrics?.activeAlerts.trend ?? (isLoading ? 'Loading' : '0 new')}
+          value={metrics ? metrics.activeAlerts.value.toString() : kpiLoading ? '...' : '0'}
+          trend={metrics?.activeAlerts.trend ?? (kpiLoading ? 'Loading' : '0 new')}
           trendLabel={metrics?.activeAlerts.trendLabel ?? 'today'}
           trendTone={metrics?.activeAlerts.trendTone ?? 'neutral'}
           icon={AlertTriangle}
@@ -141,8 +197,8 @@ export function DashboardPage() {
         />
         <KPICard
           title="Critical Threats"
-          value={metrics ? metrics.criticalThreats.value.toString() : isLoading ? '...' : '0'}
-          trend={metrics?.criticalThreats.trend ?? (isLoading ? 'Loading' : '0 triggered')}
+          value={metrics ? metrics.criticalThreats.value.toString() : kpiLoading ? '...' : '0'}
+          trend={metrics?.criticalThreats.trend ?? (kpiLoading ? 'Loading' : '0 triggered')}
           trendLabel={metrics?.criticalThreats.trendLabel ?? 'today'}
           trendTone={metrics?.criticalThreats.trendTone ?? 'neutral'}
           icon={Shield}
@@ -153,9 +209,9 @@ export function DashboardPage() {
         <KPICard
           title="System Health"
           value={
-            metrics ? `${metrics.systemHealth.value.toFixed(1)}%` : isLoading ? '...' : '0.0%'
+            metrics ? `${metrics.systemHealth.value.toFixed(1)}%` : kpiLoading ? '...' : '0.0%'
           }
-          trend={metrics?.systemHealth.trend ?? (isLoading ? 'Loading' : 'Unavailable')}
+          trend={metrics?.systemHealth.trend ?? (kpiLoading ? 'Loading' : 'Unavailable')}
           trendLabel={metrics?.systemHealth.trendLabel ?? 'overall status'}
           trendTone={metrics?.systemHealth.trendTone ?? 'neutral'}
           icon={Activity}
@@ -164,31 +220,46 @@ export function DashboardPage() {
         />
       </div>
 
-      {error ? (
+      {(kpiError || error) && (
         <div className="border border-[#7f1d1d] bg-[#1f1014] px-4 py-3 text-sm text-[#fca5a5]">
-          Dashboard summary is using fallback values right now: {error}
+          {kpiError ? `KPI realtime: ${kpiError}` : null}
+          {kpiError && error ? ' · ' : null}
+          {error ? `Charts: ${error}` : null}
         </div>
-      ) : null}
+      )}
 
-      {/* Charts Row */}
+      {/* Charts Row — full summary (slower) */}
+      {/* Charts row */}
       <div className="grid grid-cols-1 xl:grid-cols-2 gap-6">
-        <LogActivityChart data={charts?.logActivity ?? []} isLoading={isLoading} />
-        <AlertsSeverityChart data={charts?.alertsBySeverity ?? []} isLoading={isLoading} />
+        <div className="min-w-0">
+          <LogActivityChart data={logActivityFromLogs} isLoading={isActivityLoading} />
+        </div>
+        <div className="min-w-0">
+          <AlertsSeverityChart data={charts?.alertsBySeverity ?? []} isLoading={isChartsLoading} />
+        </div>
       </div>
 
-      {/* Bottom Row */}
-      <div className="grid grid-cols-1 xl:grid-cols-3 gap-6">
-        <EventsBySourceChart data={charts?.eventsBySource ?? []} isLoading={isLoading} />
-        <GeographicMap
-          attacks={attackLocations}
-          isLoading={isActivityLoading || isAlertsLoading}
-          error={alertsError ?? activityError}
-        />
-        <TerminalStream
-          events={streamEvents}
-          isLoading={isActivityLoading}
-          error={activityError}
-        />
+      {/* Full-width: account + agent (names from /api/agents) */}
+      <div className="min-w-0">
+        <EventsBySourceChart data={logsByAccountAgent} isLoading={isActivityLoading} />
+      </div>
+
+      {/* Map + terminal */}
+      <div className="grid grid-cols-1 xl:grid-cols-2 gap-6">
+        <div className="min-w-0">
+          <GeographicMap
+            attacks={attackLocations}
+            isLoading={isActivityLoading || isAlertsLoading}
+            error={alertsError ?? activityError}
+          />
+        </div>
+        <div className="min-w-0">
+          <TerminalStream
+            events={streamEvents}
+            isLoading={isActivityLoading}
+            error={activityError}
+          />
+        </div>
       </div>
 
       {/* Recent Alerts Table */}

@@ -17,6 +17,8 @@ export function AlertDeepDiveModal({ alert, isOpen, onClose }: AlertDeepDiveModa
     ? alert.destination.split(':')[1] || 'N/A'
     : 'N/A';
 
+  const summaryMessage = alert.message?.trim() ? alert.message : alert.description;
+
   const rawLogData = `{
   "event": {
     "id": "evt_${alert.id}",
@@ -44,7 +46,7 @@ export function AlertDeepDiveModal({ alert, isOpen, onClose }: AlertDeepDiveModa
   "log": {
     "source": "${alert.logSource}",
     "level": "warning",
-    "message": "${alert.description}"
+    "message": "${summaryMessage.replace(/\\/g, '\\\\').replace(/"/g, '\\"')}"
   },
   "user": {
     "name": "admin@company.com",
@@ -58,13 +60,27 @@ export function AlertDeepDiveModal({ alert, isOpen, onClose }: AlertDeepDiveModa
     "packets": ${Math.floor(Math.random() * 500)}
   },
   "threat": {
-    "indicator": "${alert.description.toLowerCase().replace(/ /g, '_')}",
+    "indicator": "${summaryMessage.toLowerCase().replace(/\\/g, '\\\\').replace(/"/g, '\\"').replace(/ /g, '_').slice(0, 120)}",
     "confidence": ${Math.floor(Math.random() * 30) + 70},
     "severity_score": ${alert.severity === 'critical' ? '9.5' : alert.severity === 'high' ? '7.8' : '5.2'}
   }
 }`;
 
   const normalizedData = [
+    ...(typeof alert.occurrenceCount === 'number' && alert.occurrenceCount >= 2
+      ? [
+          {
+            label: 'Occurrences (dedup)',
+            value: `${alert.occurrenceCount}`,
+            highlight: true,
+          },
+        ]
+      : []),
+    ...(alert.firstTriggeredAt &&
+    typeof alert.occurrenceCount === 'number' &&
+    alert.occurrenceCount >= 2
+      ? [{ label: 'First seen', value: new Date(alert.firstTriggeredAt).toLocaleString() }]
+      : []),
     { label: 'Event ID', value: `evt_${alert.id}` },
     { label: 'Timestamp', value: new Date(alert.timestamp).toLocaleString() },
     { label: 'Severity', value: alert.severity.toUpperCase(), highlight: true },
@@ -84,7 +100,11 @@ export function AlertDeepDiveModal({ alert, isOpen, onClose }: AlertDeepDiveModa
     { label: 'User', value: 'admin@company.com' },
     { label: 'Domain', value: 'CORP' },
     { label: 'User ID', value: `usr_${Math.floor(Math.random() * 10000)}` },
-    { label: 'Threat Indicator', value: alert.description },
+    {
+      label: 'Threat Indicator',
+      value:
+        summaryMessage.toLowerCase().replace(/`/g, "'").slice(0, 200),
+    },
     { label: 'Confidence Score', value: `${Math.floor(Math.random() * 30) + 70}%` },
     { label: 'Severity Score', value: alert.severity === 'critical' ? '9.5' : alert.severity === 'high' ? '7.8' : '5.2' },
     { label: 'Country', value: alert.attackerGeo?.country ?? 'Unknown' },
@@ -111,7 +131,7 @@ export function AlertDeepDiveModal({ alert, isOpen, onClose }: AlertDeepDiveModa
 Event ID: evt_${alert.id}
 Timestamp: ${new Date(alert.timestamp).toLocaleString()}
 Severity: ${alert.severity.toUpperCase()}
-Description: ${alert.description}
+Description: ${summaryMessage}
 
 RAW LOG DATA:
 ${rawLogData}
@@ -222,8 +242,10 @@ Generated: ${new Date().toLocaleString()}
                       {item.label}
                     </div>
                     <div className={`w-2/3 text-sm font-mono ${
-                      item.highlight && item.label === 'Severity' 
-                        ? getSeverityColor(alert.severity)
+                      item.highlight && (item.label === 'Severity' || item.label === 'Occurrences (dedup)') 
+                        ? item.label === 'Severity' 
+                          ? getSeverityColor(alert.severity) 
+                          : 'text-[#a5b4fc]'
                         : 'text-white'
                     }`}>
                       {item.value}
@@ -246,7 +268,7 @@ Generated: ${new Date().toLocaleString()}
             }`}>
               {alert.severity.toUpperCase()}
             </span>
-            {alert.description}
+            {summaryMessage}
           </div>
           <button
             onClick={handleDownload}

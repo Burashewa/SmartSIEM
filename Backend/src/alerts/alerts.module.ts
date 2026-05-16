@@ -9,6 +9,6 @@ import { IpGeolocationService } from '../geo/ip-geolocation.service';
   imports: [MongooseModule.forFeature([{ name: Alert.name, schema: AlertSchema }])],
   providers: [AlertsService, IpGeolocationService],
   controllers: [AlertsController],
-  exports: [AlertsService],
+  exports: [AlertsService, IpGeolocationService],
 })
 export class AlertsModule {}

@@ -16,4 +16,11 @@ export class DashboardController {
   async getSummary(@Req() request: AuthenticatedRequest) {
     return this.dashboardService.getSummary(request.user!);
   }
+
+  /** KPI counts only — fast for realtime dashboard header (no chart queries). */
+  @Get('kpi')
+  @Roles('security_analyst')
+  async getKpi(@Req() request: AuthenticatedRequest) {
+    return this.dashboardService.getKpi(request.user!);
+  }
 }

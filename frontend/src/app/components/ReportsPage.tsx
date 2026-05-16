@@ -1,6 +1,7 @@
 import { useState } from 'react';
-import { Search, Calendar, Filter, Download, TrendingUp, Activity, AlertTriangle, Database, FileText, BarChart3, Plus } from 'lucide-react';
+import { Search, Calendar, Filter, Download, TrendingUp, Activity, AlertTriangle, Database, FileText, BarChart3, Plus, FileDown, Shield } from 'lucide-react';
 import { LineChart, Line, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, Area, AreaChart } from 'recharts';
+import { generateDailySecurityReport, type DailySecurityReportResponse } from '../api/reports';
 
 interface QueryFilter {
   id: string;
@@ -140,6 +141,10 @@ export function ReportsPage() {
   const [selectedSeverities, setSelectedSeverities] = useState<string[]>([]);
   const [sourceIpFilter, setSourceIpFilter] = useState('');
 
+  const [dailyReportLoading, setDailyReportLoading] = useState(false);
+  const [dailyReportError, setDailyReportError] = useState<string | null>(null);
+  const [dailyReportResult, setDailyReportResult] = useState<DailySecurityReportResponse | null>(null);
+
   const eventTypes = ['Failed Login', 'SQL Injection', 'Port Scan', 'Access Denied', 'DDoS Attack', 'Malware Detection', 'Privilege Escalation', 'Data Exfiltration'];
   const severities = ['critical', 'high', 'medium', 'low'];
 
@@ -250,6 +255,32 @@ export function ReportsPage() {
     window.URL.revokeObjectURL(url);
   };
 
+  const handleGenerateDailySecurityReport = async () => {
+    setDailyReportLoading(true);
+    setDailyReportError(null);
+    try {
+      const res = await generateDailySecurityReport();
+      setDailyReportResult(res);
+    } catch (e) {
+      setDailyReportResult(null);
+      setDailyReportError(e instanceof Error ? e.message : 'Failed to generate report');
+    } finally {
+      setDailyReportLoading(false);
+    }
+  };
+
+  const downloadDailyMarkdown = () => {
+    if (!dailyReportResult?.markdown) return;
+    const d = new Date().toISOString().slice(0, 10);
+    const blob = new Blob([dailyReportResult.markdown], { type: 'text/markdown;charset=utf-8' });
+    const url = window.URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `daily-security-report-${d}.md`;
+    a.click();
+    window.URL.revokeObjectURL(url);
+  };
+
   return (
     <div className="space-y-6">
       {/* Header */}
@@ -264,6 +295,60 @@ export function ReportsPage() {
           <Database className="size-5 text-[#4f46e5]" />
           <span className="text-sm text-[#4f46e5] font-medium">Time-Series Analysis</span>
         </div>
+      </div>
+
+      <div className="bg-[#0f0f17] border border-[#1f1f2e] rounded-lg p-6">
+        <div className="flex flex-col gap-4 md:flex-row md:items-start md:justify-between">
+          <div className="flex gap-3">
+            <div className="mt-0.5 flex size-10 shrink-0 items-center justify-center rounded-lg bg-[#4f46e5]/20 border border-[#4f46e5]/30">
+              <Shield className="size-5 text-[#a5b4fc]" />
+            </div>
+            <div>
+              <h2 className="text-xl text-white font-medium">Daily security report</h2>
+              <p className="text-sm text-gray-400 mt-1 max-w-xl">
+                Pulls your alerts from the last 24 hours from the backend, groups them by rule, and
+                attaches remediation recommendations. A copy is also saved on the server under{' '}
+                <code className="text-gray-500 text-xs">reports/</code>.
+              </p>
+            </div>
+          </div>
+          <div className="flex flex-wrap gap-2 shrink-0">
+            <button
+              type="button"
+              onClick={() => void handleGenerateDailySecurityReport()}
+              disabled={dailyReportLoading}
+              className="inline-flex items-center gap-2 px-4 py-2.5 rounded bg-[#4f46e5] hover:bg-[#4338ca] disabled:opacity-50 text-white text-sm font-medium"
+            >
+              <FileText className="size-4" />
+              {dailyReportLoading ? 'Generating…' : 'Generate report'}
+            </button>
+            {dailyReportResult ? (
+              <button
+                type="button"
+                onClick={downloadDailyMarkdown}
+                className="inline-flex items-center gap-2 px-4 py-2.5 rounded bg-[#1a1a24] border border-[#2a2a3a] hover:border-[#4f46e5] text-gray-200 text-sm"
+              >
+                <FileDown className="size-4" />
+                Download .md
+              </button>
+            ) : null}
+          </div>
+        </div>
+        {dailyReportError ? (
+          <p className="mt-4 text-sm text-[#fca5a5]">{dailyReportError}</p>
+        ) : null}
+        {dailyReportResult ? (
+          <div className="mt-4 rounded border border-[#2a2a3a] bg-[#0a0a0f] p-4 text-sm text-gray-300 space-y-2">
+            <p>
+              <span className="text-gray-500">Alerts in window:</span>{' '}
+              <span className="font-mono text-white">{dailyReportResult.alertCount}</span>
+            </p>
+            <p className="break-all">
+              <span className="text-gray-500">Server file:</span>{' '}
+              <span className="font-mono text-xs text-gray-400">{dailyReportResult.filePath}</span>
+            </p>
+          </div>
+        ) : null}
       </div>
 
       {/* Query Builder */}

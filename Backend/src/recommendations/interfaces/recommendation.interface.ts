@@ -1,7 +1,8 @@
 export type RecommendationSeverity = 'low' | 'medium' | 'high' | 'critical';
 
 export interface AlertLike {
-  ruleId: string;
+  ruleId?: string;
+  rule_id?: string;
   severity?: string;
   ip?: string;
   context?: Record<string, unknown>;

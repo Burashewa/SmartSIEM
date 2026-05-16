@@ -8,6 +8,8 @@ interface AlertItem {
   severity: 'critical' | 'high' | 'medium' | 'low';
   status: 'open' | 'investigating' | 'resolved';
   timestamp: string;
+  firstTriggeredAt?: string;
+  occurrenceCount?: number;
   sourceIp: string;
   targetIp: string;
   description: string;
@@ -59,12 +61,21 @@ const normalizeAlert = (alert: BackendAlertRecord): AlertItem => {
     ? (context.affectedAssets as string[])
     : [];
 
+  const occ =
+    typeof alert.occurrenceCount === 'number' && alert.occurrenceCount >= 1
+      ? Math.floor(alert.occurrenceCount)
+      : undefined;
+
   return {
     id: alert._id ?? alert.alert_id ?? `${ruleId}-${alert.trigger_time}`,
     title: ruleName,
     severity: (readString(alert.severity) ?? 'low').toLowerCase() as AlertItem['severity'],
     status: (readString(alert.status) ?? 'open').toLowerCase() as AlertItem['status'],
     timestamp: new Date(alert.trigger_time ?? alert.triggeredAt ?? Date.now()).toLocaleString(),
+    firstTriggeredAt: alert.firstTriggeredAt
+      ? new Date(alert.firstTriggeredAt).toLocaleString()
+      : undefined,
+    occurrenceCount: occ,
     sourceIp,
     targetIp,
     description: readString(alert.message) ?? `${ruleName} triggered`,
@@ -220,7 +231,17 @@ export function AlertsPage() {
                   <div className="flex items-center gap-3">
                     <AlertTriangle className="size-5 text-[#ef4444]" />
                     <div>
-                      <h3 className="text-white font-medium">{alert.title}</h3>
+                      <div className="flex flex-wrap items-center gap-2">
+                        <h3 className="text-white font-medium">{alert.title}</h3>
+                        {typeof alert.occurrenceCount === 'number' && alert.occurrenceCount > 1 ? (
+                          <span
+                            title="Grouped emissions in the SIEM dedup window"
+                            className="text-[11px] font-semibold uppercase tracking-wide px-2 py-0.5 rounded bg-[#4f46e5]/25 text-[#a5b4fc] border border-[#4f46e5]/35"
+                          >
+                            ×{alert.occurrenceCount}
+                          </span>
+                        ) : null}
+                      </div>
                       <p className="text-xs text-gray-500 font-mono mt-1">{alert.id}</p>
                     </div>
                   </div>
@@ -254,7 +275,14 @@ export function AlertsPage() {
             <div className="bg-[#0f0f17] border border-[#1f1f2e] p-6">
               <div className="flex items-start justify-between mb-6">
                 <div>
-                  <h3 className="text-xl text-white font-medium mb-2">{selectedAlert.title}</h3>
+                  <div className="flex flex-wrap items-center gap-2 mb-2">
+                    <h3 className="text-xl text-white font-medium">{selectedAlert.title}</h3>
+                    {typeof selectedAlert.occurrenceCount === 'number' && selectedAlert.occurrenceCount > 1 ? (
+                      <span className="text-xs font-semibold px-2 py-1 rounded bg-[#4f46e5]/25 text-[#a5b4fc] border border-[#4f46e5]/35">
+                        {selectedAlert.occurrenceCount} grouped hits
+                      </span>
+                    ) : null}
+                  </div>
                   <p className="text-sm text-gray-400 font-mono">{selectedAlert.id}</p>
                 </div>
                 <span className={`text-xs font-medium px-3 py-1.5 uppercase ${getSeverityColor(selectedAlert.severity)}`}>
@@ -277,6 +305,31 @@ export function AlertsPage() {
                   <h4 className="text-sm font-medium text-white mb-2">Description</h4>
                   <p className="text-sm text-gray-400">{selectedAlert.description}</p>
                 </div>
+
+                {typeof selectedAlert.occurrenceCount === 'number' && selectedAlert.occurrenceCount > 1 ? (
+                  <div className="rounded border border-[#2f2f3e] bg-[#1a1a24] px-4 py-3">
+                    <h4 className="text-sm font-medium text-white mb-2">Deduplication</h4>
+                    <dl className="grid grid-cols-2 gap-3 text-sm">
+                      <div>
+                        <dt className="text-gray-500">Occurrences</dt>
+                        <dd className="text-gray-200 font-mono">{selectedAlert.occurrenceCount}</dd>
+                      </div>
+                      {selectedAlert.firstTriggeredAt ? (
+                        <div>
+                          <dt className="text-gray-500">First seen</dt>
+                          <dd className="text-gray-200">{selectedAlert.firstTriggeredAt}</dd>
+                        </div>
+                      ) : null}
+                      <div>
+                        <dt className="text-gray-500">Last seen</dt>
+                        <dd className="text-gray-200">{selectedAlert.timestamp}</dd>
+                      </div>
+                    </dl>
+                    <p className="text-xs text-gray-500 mt-2">
+                      Multiple emissions for the same IP and rule within the backend time window roll into one alert row.
+                    </p>
+                  </div>
+                ) : null}
 
                 <div className="grid grid-cols-2 gap-4">
                   <div>

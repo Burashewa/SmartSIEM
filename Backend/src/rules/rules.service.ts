@@ -31,7 +31,7 @@ export class RulesService {
 
     // Get stats for each rule
     const statsPromises = rules.map(async (rule) => {
-      const alerts = await this.alertModel.find({ ruleId: rule.id }).sort({ createdAt: -1 });
+      const alerts = await this.alertModel.find({ rule_id: rule.id }).sort({ createdAt: -1 });
       const triggerCount = alerts.length;
       const lastTriggered = alerts.length > 0 && alerts[0].createdAt ? alerts[0].createdAt.toISOString() : null;
       return { ...rule, triggerCount, lastTriggered };

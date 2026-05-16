@@ -98,6 +98,9 @@ export function RecentAlertsTable({
                 Rule Name
               </th>
               <th className="text-left py-3 px-4 text-xs font-medium text-gray-400 uppercase">
+                Hits
+              </th>
+              <th className="text-left py-3 px-4 text-xs font-medium text-gray-400 uppercase">
                 Log Source
               </th>
               <th className="text-left py-3 px-4 text-xs font-medium text-gray-400 uppercase">
@@ -111,7 +114,7 @@ export function RecentAlertsTable({
           <tbody>
             {isLoading ? (
               <tr>
-                <td colSpan={8} className="px-4 py-8 text-center text-sm text-gray-500">
+                <td colSpan={9} className="px-4 py-8 text-center text-sm text-gray-500">
                   Loading recent alerts from the backend...
                 </td>
               </tr>
@@ -119,7 +122,7 @@ export function RecentAlertsTable({
 
             {!isLoading && error ? (
               <tr>
-                <td colSpan={8} className="px-4 py-8 text-center text-sm text-[#fca5a5]">
+                <td colSpan={9} className="px-4 py-8 text-center text-sm text-[#fca5a5]">
                   {error}
                 </td>
               </tr>
@@ -127,7 +130,7 @@ export function RecentAlertsTable({
 
             {!isLoading && !error && alerts.length === 0 ? (
               <tr>
-                <td colSpan={8} className="px-4 py-8 text-center text-sm text-gray-500">
+                <td colSpan={9} className="px-4 py-8 text-center text-sm text-gray-500">
                   No alerts have been triggered yet.
                 </td>
               </tr>
@@ -155,8 +158,27 @@ export function RecentAlertsTable({
                     <td className="py-3 px-4 text-sm font-mono text-gray-300">
                       {alert.destination}
                     </td>
+                    <td className="py-3 px-4 text-sm text-gray-300 max-w-[240px]">
+                      <div className="font-medium truncate" title={alert.ruleName}>
+                        {alert.ruleName}
+                      </div>
+                      {alert.description && alert.description !== alert.ruleName ? (
+                        <div className="text-xs text-gray-500 truncate mt-0.5" title={alert.description}>
+                          {alert.description}
+                        </div>
+                      ) : null}
+                    </td>
                     <td className="py-3 px-4 text-sm text-gray-300">
-                      {alert.ruleName}
+                      {typeof alert.occurrenceCount === 'number' && alert.occurrenceCount >= 2 ? (
+                        <span
+                          className="inline-flex items-center rounded bg-[#4f46e5]/20 px-2 py-0.5 text-xs font-mono text-[#a5b4fc] border border-[#4f46e5]/30"
+                          title={`${alert.occurrenceCount} grouped events (dedup)`}
+                        >
+                          ×{alert.occurrenceCount}
+                        </span>
+                      ) : (
+                        <span className="text-gray-600">1</span>
+                      )}
                     </td>
                     <td className="py-3 px-4 text-sm font-mono text-white">
                       {alert.logSource}

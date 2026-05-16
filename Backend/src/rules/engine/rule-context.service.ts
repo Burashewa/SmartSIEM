@@ -2,6 +2,7 @@ import { Injectable, Logger } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model } from 'mongoose';
 import { AlertsService } from '../../alerts/alerts.service';
+import { IpGeolocationService } from '../../geo/ip-geolocation.service';
 import { Alert } from '../../alerts/alert.schema';
 import { Log } from '../../logs/log.schema';
 import {
@@ -11,6 +12,7 @@ import {
 } from '../interfaces/detection-rule.interface';
 import { FAILED_LOGIN_EVENT_NAMES } from '../rules.constants';
 import { RecommendationsService } from '../../recommendations/recommendations.service';
+import { MaliciousIpService } from '../../threat-intel/malicious-ip.service';
 
 @Injectable()
 export class RuleContextService {
@@ -19,6 +21,8 @@ export class RuleContextService {
     @InjectModel(Alert.name) private readonly alertModel: Model<Alert>,
     private readonly alertsService: AlertsService,
     private readonly recommendationsService: RecommendationsService,
+    private readonly ipGeolocation: IpGeolocationService,
+    private readonly maliciousIp: MaliciousIpService,
   ) {}
 
   build(ruleId: string): RuleContext {
@@ -28,6 +32,16 @@ export class RuleContextService {
       logModel: this.logModel,
       alertsService: this.alertsService,
       logger,
+      resolveIpCountry: async (ip: string | undefined) => {
+        const loc = await this.ipGeolocation.locate(ip, undefined);
+        if (!loc) return undefined;
+        return {
+          country: loc.country,
+          countryCode: loc.countryCode,
+          source: loc.source,
+        };
+      },
+      isMaliciousIp: (ip: string | undefined) => this.maliciousIp.isListed(ip),
       emitAlert: async (input: AlertInput, log: Log): Promise<void> => {
         const enrichment = await this.buildEnrichment(log);
         const recommendations = this.recommendationsService.getRecommendations(input);

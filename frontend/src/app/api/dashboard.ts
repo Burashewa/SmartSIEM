@@ -48,6 +48,11 @@ export interface BackendAlertRecord {
   severity: BackendSeverity | string;
   trigger_time?: string;
   triggeredAt?: string;
+  /** Dedup rollup: total fires merged into this row (defaults to 1 if absent). */
+  occurrenceCount?: number;
+  /** First fire in this dedupe group (Mongo). */
+  firstTriggeredAt?: string;
+  dedupeGroupKey?: string;
   ip?: string;
   status: BackendAlertStatus | string;
   context?: Record<string, unknown>;
@@ -61,7 +66,7 @@ export interface BackendAlertRecord {
     lat?: number;
     lng?: number;
     isp?: string;
-    source: 'context' | 'ip-api' | 'private' | 'unknown';
+    source: 'context' | 'ip-api' | 'ipwho' | 'private' | 'unknown';
   };
 }
 
@@ -90,6 +95,9 @@ export interface DashboardSummaryResponse {
   };
 }
 
+/** Subset of summary used for frequent KPI polling. */
+export type DashboardKpiResponse = Pick<DashboardSummaryResponse, 'generatedAt' | 'metrics'>;
+
 export async function fetchDashboardSummary(): Promise<DashboardSummaryResponse> {
   const response = await authFetch('/api/dashboard/summary');
 
@@ -98,6 +106,17 @@ export async function fetchDashboardSummary(): Promise<DashboardSummaryResponse>
   }
 
   return response.json() as Promise<DashboardSummaryResponse>;
+}
+
+/** Lightweight KPI metrics (~7 count queries only). Poll often for realtime top row. */
+export async function fetchDashboardKpi(): Promise<DashboardKpiResponse> {
+  const response = await authFetch('/api/dashboard/kpi');
+
+  if (!response.ok) {
+    throw new Error(`Failed to load dashboard KPI (${response.status})`);
+  }
+
+  return response.json() as Promise<DashboardKpiResponse>;
 }
 
 export async function fetchDashboardLogs(): Promise<BackendLogRecord[]> {

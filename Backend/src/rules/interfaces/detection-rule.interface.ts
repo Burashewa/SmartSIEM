@@ -28,11 +28,22 @@ export interface AlertInput {
   context?: Record<string, unknown>;
 }
 
+/** Country resolved from client IP (ipwho / ip-api); `source` is `private` for RFC1918/loopback. */
+export type ResolvedIpCountry = {
+  country?: string;
+  countryCode?: string;
+  source: 'context' | 'ip-api' | 'ipwho' | 'private' | 'unknown';
+};
+
 export interface RuleContext {
   logModel: Model<Log>;
   alertsService: AlertsService;
   logger: Logger;
   emitAlert: (input: AlertInput, log: Log) => Promise<void>;
+  /** Resolve country from IP for detection rules (cached inside the geolocation service). */
+  resolveIpCountry: (ip: string | undefined) => Promise<ResolvedIpCountry | undefined>;
+  /** True when IP is on the configured malicious / blocklist (see MALICIOUS_IPS). */
+  isMaliciousIp: (ip: string | undefined) => boolean;
 }
 
 export interface DetectionRule {

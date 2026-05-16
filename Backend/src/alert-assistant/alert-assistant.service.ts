@@ -73,7 +73,7 @@ export class AlertAssistantService {
 
     const byText = alerts.find((alert) => {
       const id = this.getAlertId(alert).toLowerCase();
-      const ruleId = (alert.ruleId ?? '').toLowerCase();
+      const ruleId = (alert.ruleId ?? alert.rule_id ?? '').toLowerCase();
       const ip = (alert.ip ?? '').toLowerCase();
       return (
         (id && normalizedMessage.includes(id)) ||
@@ -102,7 +102,7 @@ export class AlertAssistantService {
 
   private getRecommendations(alert: AlertResponse): string[] {
     const generated = this.recommendationsService.getRecommendations({
-      ruleId: alert.ruleId ?? 'unknown-rule',
+      ruleId: alert.ruleId ?? alert.rule_id ?? 'unknown-rule',
       severity: alert.severity,
       ip: alert.ip,
       context: alert.context,
@@ -151,7 +151,7 @@ export class AlertAssistantService {
   }
 
   private summarizeAlert(alert: AlertResponse): AlertSummary {
-    const ruleId = alert.ruleId ?? 'unknown-rule';
+    const ruleId = alert.ruleId ?? alert.rule_id ?? 'unknown-rule';
     return {
       id: this.getAlertId(alert),
       title: this.humanizeRule(ruleId),

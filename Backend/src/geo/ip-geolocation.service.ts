@@ -9,7 +9,7 @@ export interface IpGeoLocation {
   lat?: number;
   lng?: number;
   isp?: string;
-  source: 'context' | 'ip-api' | 'private' | 'unknown';
+  source: 'context' | 'ip-api' | 'ipwho' | 'private' | 'unknown';
 }
 
 interface IpApiResponse {
@@ -25,10 +25,14 @@ interface IpApiResponse {
   isp?: string;
 }
 
+const FETCH_TIMEOUT_MS = 12_000;
+
 @Injectable()
 export class IpGeolocationService {
   private readonly logger = new Logger(IpGeolocationService.name);
   private readonly cache = new Map<string, IpGeoLocation>();
+  /** One in-flight lookup per public IP to avoid duplicate requests and log spam. */
+  private readonly pending = new Map<string, Promise<IpGeoLocation>>();
 
   async locate(ip: string | undefined, context?: Record<string, unknown>): Promise<IpGeoLocation | undefined> {
     const normalizedIp = this.normalizeIp(ip);
@@ -53,44 +57,114 @@ export class IpGeolocationService {
       return privateLocation;
     }
 
-    try {
-      const response = await fetch(
-        `http://ip-api.com/json/${encodeURIComponent(normalizedIp)}?fields=status,message,country,countryCode,regionName,city,lat,lon,isp,query`,
-      );
-      if (!response.ok) {
-        throw new Error(`ip-api returned ${response.status}`);
-      }
-
-      const data = (await response.json()) as IpApiResponse;
-      if (data.status !== 'success') {
-        throw new Error(data.message ?? 'lookup failed');
-      }
-
-      const location: IpGeoLocation = {
-        ip: data.query ?? normalizedIp,
-        city: this.readString(data.city),
-        region: this.readString(data.regionName),
-        country: this.readString(data.country),
-        countryCode: this.readString(data.countryCode),
-        lat: this.readNumber(data.lat),
-        lng: this.readNumber(data.lon),
-        isp: this.readString(data.isp),
-        source: 'ip-api',
-      };
-
-      this.cache.set(normalizedIp, location);
-      return location;
-    } catch (error) {
-      this.logger.debug(
-        `Unable to geolocate ${normalizedIp}: ${error instanceof Error ? error.message : 'unknown error'}`,
-      );
-      const unknownLocation: IpGeoLocation = {
-        ip: normalizedIp,
-        source: 'unknown',
-      };
-      this.cache.set(normalizedIp, unknownLocation);
-      return unknownLocation;
+    let inflight = this.pending.get(normalizedIp);
+    if (!inflight) {
+      inflight = this.resolvePublicIp(normalizedIp).finally(() => {
+        this.pending.delete(normalizedIp);
+      });
+      this.pending.set(normalizedIp, inflight);
     }
+    return inflight;
+  }
+
+  private async resolvePublicIp(normalizedIp: string): Promise<IpGeoLocation> {
+    const errors: string[] = [];
+
+    try {
+      const loc = await this.lookupIpWho(normalizedIp);
+      this.cache.set(normalizedIp, loc);
+      return loc;
+    } catch (e) {
+      errors.push(`ipwho: ${e instanceof Error ? e.message : 'unknown'}`);
+    }
+
+    try {
+      const loc = await this.lookupIpApi(normalizedIp);
+      this.cache.set(normalizedIp, loc);
+      return loc;
+    } catch (e) {
+      errors.push(`ip-api: ${e instanceof Error ? e.message : 'unknown'}`);
+    }
+
+    this.logger.debug(`Unable to geolocate ${normalizedIp}: ${errors.join('; ')}`);
+    const unknownLocation: IpGeoLocation = {
+      ip: normalizedIp,
+      source: 'unknown',
+    };
+    this.cache.set(normalizedIp, unknownLocation);
+    return unknownLocation;
+  }
+
+  /** HTTPS — works when outbound HTTP (ip-api) is blocked by proxy/firewall. */
+  private async lookupIpWho(ip: string): Promise<IpGeoLocation> {
+    const response = await fetch(`https://ipwho.is/${encodeURIComponent(ip)}`, {
+      signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
+      headers: {
+        Accept: 'application/json',
+        'User-Agent': 'SmartSIEM/1.0',
+      },
+    });
+    if (!response.ok) {
+      throw new Error(`ipwho returned ${response.status}`);
+    }
+
+    const data = (await response.json()) as Record<string, unknown>;
+    if (data.success !== true) {
+      const msg = typeof data.message === 'string' ? data.message : 'lookup failed';
+      throw new Error(msg);
+    }
+
+    const connection = this.readRecord(data.connection);
+
+    const location: IpGeoLocation = {
+      ip: this.readString(data.ip) ?? ip,
+      city: this.readString(data.city),
+      region: this.readString(data.region),
+      country: this.readString(data.country),
+      countryCode: this.readString(data.country_code),
+      lat: this.readNumber(data.latitude),
+      lng: this.readNumber(data.longitude),
+      isp: connection ? this.readString(connection.isp) : undefined,
+      source: 'ipwho',
+    };
+
+    if (!location.country && !location.countryCode) {
+      throw new Error('no country in response');
+    }
+
+    return location;
+  }
+
+  private async lookupIpApi(ip: string): Promise<IpGeoLocation> {
+    const response = await fetch(
+      `http://ip-api.com/json/${encodeURIComponent(ip)}?fields=status,message,country,countryCode,regionName,city,lat,lon,isp,query`,
+      {
+        signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
+        headers: { 'User-Agent': 'SmartSIEM/1.0' },
+      },
+    );
+    if (!response.ok) {
+      throw new Error(`ip-api returned ${response.status}`);
+    }
+
+    const data = (await response.json()) as IpApiResponse;
+    if (data.status !== 'success') {
+      throw new Error(data.message ?? 'lookup failed');
+    }
+
+    const location: IpGeoLocation = {
+      ip: data.query ?? ip,
+      city: this.readString(data.city),
+      region: this.readString(data.regionName),
+      country: this.readString(data.country),
+      countryCode: this.readString(data.countryCode),
+      lat: this.readNumber(data.lat),
+      lng: this.readNumber(data.lon),
+      isp: this.readString(data.isp),
+      source: 'ip-api',
+    };
+
+    return location;
   }
 
   private fromContext(ip: string, context?: Record<string, unknown>): IpGeoLocation | undefined {

@@ -58,11 +58,15 @@ export class GenericLogParser implements LogParser {
 
   private resolveRaw(dto: CreateLogDto): Record<string, unknown> {
     const dtoAny = dto as Record<string, unknown>;
-    if (Object.prototype.hasOwnProperty.call(dtoAny, 'raw')) {
-      const pr = this.readRecord(dtoAny.raw);
-      return pr ? { ...pr } : {};
+    if (!Object.prototype.hasOwnProperty.call(dtoAny, 'raw')) {
+      return { ...dtoAny };
     }
-    return { ...dtoAny };
+    const pr = this.readRecord(dtoAny.raw);
+    const inner = pr ? { ...pr } : {};
+    // When `raw` is set, we still need top-level fields (e.g. `body`) on the snapshot;
+    // previously only `dto.raw` was copied and siblings like `body` were dropped.
+    const { raw: _ignored, ...withoutRaw } = dtoAny;
+    return { ...withoutRaw, ...inner };
   }
 
   private resolveMetadata(dto: CreateLogDto): Record<string, unknown> | undefined {

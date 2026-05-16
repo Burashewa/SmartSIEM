@@ -11,6 +11,8 @@ import { SystemModule } from './system/system.module';
 import { AuthModule } from './auth/auth.module';
 import { AgentsModule } from './agents/agents.module';
 import { AlertAssistantModule } from './alert-assistant/alert-assistant.module';
+import { ScheduleModule } from '@nestjs/schedule';
+import { ReportsModule } from './reports/reports.module';
 
 @Module({
   imports: [
@@ -18,6 +20,7 @@ import { AlertAssistantModule } from './alert-assistant/alert-assistant.module';
       isGlobal: true,
       envFilePath: [join(process.cwd(), '.env'), join(process.cwd(), '..', '.env')],
     }),
+    ScheduleModule.forRoot(),
     ServeStaticModule.forRoot({
       rootPath: join(process.cwd(), 'public'),
       exclude: ['/api*'],
@@ -46,6 +49,7 @@ import { AlertAssistantModule } from './alert-assistant/alert-assistant.module';
     AuthModule,
     AgentsModule,
     AlertAssistantModule,
+    ReportsModule,
   ],
 })
 export class AppModule {}
