@@ -124,7 +124,7 @@ def main() -> None:
             logger.error(
                 "Collector startup failed: a required port is already in use. "
                 "Set SYSLOG_UDP_PORT/SYSLOG_TCP_PORT/HTTP_PORT in .env to free ports "
-                "(for example 5514/5515/8080), or stop the service using them."
+                "(for example 5514/5515/5000), or stop the service using them."
             )
             sys.exit(1)
         logger.exception("Collector terminated unexpectedly")

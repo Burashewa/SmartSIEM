@@ -6,7 +6,7 @@ import react from '@vitejs/plugin-react'
 export default defineConfig(({ mode }) => {
   const env = loadEnv(mode, process.cwd(), '')
   const workerTarget = env.VITE_PROXY_WORKER_TARGET || 'http://127.0.0.1:4000'
-  const collectorTarget = env.VITE_PROXY_COLLECTOR_TARGET || 'http://127.0.0.1:8080'
+  const collectorTarget = env.VITE_PROXY_COLLECTOR_TARGET || 'http://127.0.0.1:5000'
 
   const backendProxy = {
     '/api/worker': {

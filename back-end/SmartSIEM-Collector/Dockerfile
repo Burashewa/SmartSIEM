@@ -15,7 +15,7 @@ RUN pip install --no-cache-dir -r requirements.txt
 # Copy collector source
 COPY . .
 
-EXPOSE 8080
+EXPOSE 5000
 
 # Map Render PORT -> app HTTP_PORT at runtime
-CMD ["sh", "-c", "HTTP_PORT=${PORT:-8080} python main.py"]
+CMD ["sh", "-c", "HTTP_PORT=${PORT:-5000} python main.py"]

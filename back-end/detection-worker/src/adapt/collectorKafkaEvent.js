@@ -43,6 +43,19 @@ function isCollectorOcsfPayload(msg) {
 }
 
 /**
+ * SmartSIEM flat agent JSON: string semantic `event`, UUID `event_id`, `ip` / `user` (not OCSF nested event + raw_log).
+ * @param {unknown} msg
+ * @returns {boolean}
+ */
+function isFlatAgentLogPayload(msg) {
+  if (!msg || typeof msg !== 'object' || Array.isArray(msg)) return false;
+  const o = /** @type {Record<string, unknown>} */ (msg);
+  if (typeof o.event !== 'string' || o.event.trim() === '') return false;
+  if (typeof o.event_id !== 'string' || o.event_id.trim() === '') return false;
+  return true;
+}
+
+/**
  * @param {unknown} v
  * @returns {string | undefined}
  */
@@ -119,6 +132,53 @@ function buildRawData(collector) {
   }
   for (const [k, v] of Object.entries(net)) {
     if (v != null && base[k] == null) base[k] = v;
+  }
+
+  return base;
+}
+
+/**
+ * raw_data for flat agent logs (pattern rules, threat intel, Mongo).
+ * @param {Record<string, unknown>} m
+ * @returns {Record<string, unknown>}
+ */
+function buildRawDataFromFlatAgent(m) {
+  /** @type {Record<string, unknown>} */
+  let base = {};
+
+  if (m.payload && typeof m.payload === 'object' && !Array.isArray(m.payload)) {
+    base = { .../** @type {Record<string, unknown>} */ (m.payload) };
+  }
+
+  const passthroughKeys = [
+    'message',
+    'log',
+    'line',
+    'rawLine',
+    'userAgent',
+    'endpoint',
+    'method',
+    'resource',
+    'deviceId',
+    'sessionId',
+    'severity',
+    'role',
+    'latitude',
+    'longitude',
+    'lat',
+    'lon',
+    'tags',
+  ];
+
+  for (const k of passthroughKeys) {
+    if (m[k] != null && base[k] == null) base[k] = m[k];
+  }
+
+  if (m.metadata && typeof m.metadata === 'object' && !Array.isArray(m.metadata)) {
+    base.metadata = /** @type {Record<string, unknown>} */ (m.metadata);
+  }
+  if (m.raw && typeof m.raw === 'object' && !Array.isArray(m.raw)) {
+    base.raw = /** @type {Record<string, unknown>} */ (m.raw);
   }
 
   return base;
@@ -216,6 +276,52 @@ function mapCollectorOcsfToDetectionEvent(collector) {
 }
 
 /**
+ * @param {Record<string, unknown>} m
+ * @returns {Record<string, unknown>}
+ */
+function mapFlatAgentLogToDetectionEvent(m) {
+  const userStr = strOrUndef(m.user) || strOrUndef(m.userId);
+  const userId = userStr;
+  const username = userStr;
+
+  const eventCategory = typeof m.event === 'string' ? m.event : undefined;
+  /** @type {Record<string, unknown>} */
+  const ev = {
+    type: eventCategory,
+    action: strOrUndef(m.action),
+    outcome: strOrUndef(m.status),
+  };
+
+  /** @type {Record<string, unknown>} */
+  const collectorLike = {
+    ...m,
+    event: ev,
+    action: m.action,
+    status: m.status,
+    event_type: m.event_type,
+    event_name: m.event_name,
+  };
+
+  const rawData = buildRawDataFromFlatAgent(m);
+  const cmdFromPayload =
+    m.payload && typeof m.payload === 'object' && !Array.isArray(m.payload)
+      ? strOrUndef(/** @type {Record<string, unknown>} */ (m.payload).command_line)
+      : undefined;
+
+  return {
+    ...m,
+    timestamp: m.timestamp,
+    event_type: deriveEventType(collectorLike, ev),
+    source_ip: strOrUndef(m.ip),
+    user_id: userId,
+    username: username || userId,
+    process_name:
+      strOrUndef(m.process_name) || processNameFromCommandLine(cmdFromPayload || strOrUndef(m.command_line)),
+    raw_data: rawData,
+  };
+}
+
+/**
  * Normalize a Kafka JSON value for the detection pipeline.
  * @param {unknown} parsed
  * @returns {Record<string, unknown> | null}
@@ -230,6 +336,11 @@ function normalizeInboundKafkaMessage(parsed) {
       mapCollectorOcsfToDetectionEvent(/** @type {Record<string, unknown>} */ (parsed))
     );
   }
+  if (isFlatAgentLogPayload(parsed)) {
+    return /** @type {Record<string, unknown>} */ (
+      mapFlatAgentLogToDetectionEvent(/** @type {Record<string, unknown>} */ (parsed))
+    );
+  }
   return /** @type {Record<string, unknown>} */ (parsed);
 }
 
@@ -237,4 +348,6 @@ module.exports = {
   FAILED_LOGIN_EVENT_NAMES,
   normalizeInboundKafkaMessage,
   isCollectorOcsfPayload,
+  isFlatAgentLogPayload,
+  mapFlatAgentLogToDetectionEvent,
 };

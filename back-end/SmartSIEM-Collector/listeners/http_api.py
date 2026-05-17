@@ -39,7 +39,7 @@ class HttpApiServer:
 
         self._app = FastAPI(title="SmartSIEM Collector HTTP API")
         self._app.add_api_route(
-            "/ingest",
+            "/api/logs",
             self._handle_ingest,
             methods=["POST"],
             include_in_schema=True,
@@ -186,3 +186,5 @@ class HttpApiServer:
         self._running = False
         self._server = None
         logger.info("HTTP API stopped")
+    
+    

@@ -147,7 +147,7 @@ export function DashboardPage({ onSystemStatus }: DashboardPageProps) {
           </span>
         </div>
         {!pollOk && (
-          <span className="text-xs text-amber-400">No backend responses — check ports 8080 / 4000</span>
+          <span className="text-xs text-amber-400">No backend responses — check ports 5000 / 4000</span>
         )}
       </div>
 

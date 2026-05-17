@@ -22,7 +22,7 @@ class Settings(BaseSettings):
     http_host: str = "0.0.0.0"
     # Accept Render's dynamic PORT while keeping HTTP_PORT compatibility.
     http_port: int = Field(
-        default=8080,
+        default=5000,
         validation_alias=AliasChoices("HTTP_PORT", "PORT"),
     )
 
