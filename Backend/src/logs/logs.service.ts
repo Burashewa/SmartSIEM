@@ -1,5 +1,5 @@
 import { InjectModel } from '@nestjs/mongoose';
-import { Injectable } from '@nestjs/common';
+import { Injectable, NotFoundException } from '@nestjs/common';
 import { Model, Types } from 'mongoose';
 import { Log } from './log.schema';
 import { CreateLogDto } from './log.dto';
@@ -48,6 +48,29 @@ export class LogsService {
   async clearAll(user: AuthJwtPayload): Promise<{ deletedCount: number }> {
     const result = await this.logModel.deleteMany(this.buildOwnershipFilter(user));
     return { deletedCount: result.deletedCount ?? 0 };
+  }
+
+  async deleteOne(id: string, user: AuthJwtPayload): Promise<{ deletedCount: number }> {
+    const ownershipFilter = this.buildOwnershipFilter(user);
+    const idFilters: Array<Record<string, unknown>> = [{ event_id: id }];
+
+    if (Types.ObjectId.isValid(id)) {
+      idFilters.push({ _id: new Types.ObjectId(id) });
+    }
+
+    const result = await this.logModel
+      .deleteOne({
+        ...ownershipFilter,
+        $or: idFilters,
+      })
+      .exec();
+
+    const deletedCount = result.deletedCount ?? 0;
+    if (deletedCount === 0) {
+      throw new NotFoundException(`Log ${id} not found`);
+    }
+
+    return { deletedCount };
   }
 
   private attachOwnership(

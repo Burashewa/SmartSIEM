@@ -149,6 +149,16 @@ export async function fetchLogs(): Promise<BackendLogRecord[]> {
   return response.json() as Promise<BackendLogRecord[]>;
 }
 
+export async function deleteLog(id: string): Promise<void> {
+  const response = await authFetch(`/api/logs/${encodeURIComponent(id)}`, {
+    method: 'DELETE',
+  });
+
+  if (!response.ok) {
+    throw new Error(`Failed to delete log ${id} (${response.status})`);
+  }
+}
+
 export async function fetchAlerts(): Promise<BackendAlertRecord[]> {
   const response = await authFetch('/api/alerts');
 

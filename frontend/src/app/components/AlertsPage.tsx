@@ -1,12 +1,14 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useState, useCallback } from 'react';
 import { AlertTriangle, Clock, CheckCircle, XCircle, Eye } from 'lucide-react';
 import { fetchAlerts, type BackendAlertRecord } from '../api/dashboard';
+
+// ─── Types ────────────────────────────────────────────────────────────────────
 
 interface AlertItem {
   id: string;
   title: string;
   severity: 'critical' | 'high' | 'medium' | 'low';
-  status: 'open' | 'investigating' | 'resolved';
+  status: 'open' | 'investigating' | 'resolved' | 'false_positive';
   timestamp: string;
   firstTriggeredAt?: string;
   occurrenceCount?: number;
@@ -19,6 +21,12 @@ interface AlertItem {
   attackerLocation: string;
   attackerIsp?: string;
 }
+
+type StatusFilter = 'all' | 'open' | 'investigating' | 'resolved' | 'false_positive';
+type SeverityFilter = 'all' | 'critical' | 'high' | 'medium' | 'low';
+type SortBy = 'newest' | 'oldest' | 'severity';
+
+// ─── Normalizer helpers ───────────────────────────────────────────────────────
 
 const readString = (value: unknown): string | undefined => {
   return typeof value === 'string' && value.trim() ? value.trim() : undefined;
@@ -34,16 +42,34 @@ const humanizeRule = (ruleId: string | undefined): string => {
     .join(' ');
 };
 
+const formatGeoLabel = (geo: BackendAlertRecord['geo']): string | undefined => {
+  if (!geo) return undefined;
+  const parts = [readString(geo.city), readString(geo.region), readString(geo.country)].filter(Boolean);
+  if (parts.length > 0) return parts.join(', ');
+  if (geo.source === 'private') return 'Private network';
+  return undefined;
+};
+
+// Mirrors toUiStatus from reference — maps any backend status string to our UI union
+const toUiStatus = (status: string): AlertItem['status'] => {
+  const normalized = status.toLowerCase().trim();
+  if (normalized === 'new' || normalized === 'open') return 'open';
+  if (normalized === 'investigating') return 'investigating';
+  if (normalized === 'resolved') return 'resolved';
+  if (normalized === 'false_positive') return 'false_positive';
+  return 'open';
+};
+
 const normalizeAlert = (alert: BackendAlertRecord): AlertItem => {
   const ruleId =
     readString(alert.rule_id) ?? readString(alert.ruleId) ?? readString(alert.alert_id) ?? 'unknown-rule';
   const ruleName = readString(alert.rule_name) ?? humanizeRule(ruleId);
-  const context = typeof alert.context === 'object' && alert.context ? (alert.context as Record<string, unknown>) : {};
+  const context =
+    typeof alert.context === 'object' && alert.context
+      ? (alert.context as Record<string, unknown>)
+      : {};
 
-  const sourceIp =
-    readString(alert.ip) ??
-    readString(context.ip) ??
-    'Unknown';
+  const sourceIp = readString(alert.ip) ?? readString(context.ip) ?? 'Unknown';
 
   const targetIp =
     readString(context.endpoint) ??
@@ -55,7 +81,7 @@ const normalizeAlert = (alert: BackendAlertRecord): AlertItem => {
 
   const recommendations = Array.isArray(context.recommendations)
     ? (context.recommendations as string[])
-    : [];
+    : ['Investigate event context'];
 
   const affectedAssets = Array.isArray(context.affectedAssets)
     ? (context.affectedAssets as string[])
@@ -70,7 +96,7 @@ const normalizeAlert = (alert: BackendAlertRecord): AlertItem => {
     id: alert._id ?? alert.alert_id ?? `${ruleId}-${alert.trigger_time}`,
     title: ruleName,
     severity: (readString(alert.severity) ?? 'low').toLowerCase() as AlertItem['severity'],
-    status: (readString(alert.status) ?? 'open').toLowerCase() as AlertItem['status'],
+    status: toUiStatus(readString(alert.status) ?? 'open'),
     timestamp: new Date(alert.trigger_time ?? alert.triggeredAt ?? Date.now()).toLocaleString(),
     firstTriggeredAt: alert.firstTriggeredAt
       ? new Date(alert.firstTriggeredAt).toLocaleString()
@@ -90,87 +116,153 @@ const normalizeAlert = (alert: BackendAlertRecord): AlertItem => {
   };
 };
 
-const formatGeoLabel = (geo: BackendAlertRecord['geo']): string | undefined => {
-  if (!geo) return undefined;
-  const parts = [readString(geo.city), readString(geo.region), readString(geo.country)].filter(
-    Boolean,
-  );
-  if (parts.length > 0) return parts.join(', ');
-  if (geo.source === 'private') return 'Private network';
-  return undefined;
+// ─── Style helpers ────────────────────────────────────────────────────────────
+
+const getSeverityColor = (severity: string) => {
+  switch (severity) {
+    case 'critical': return 'bg-[#ef4444] text-white';
+    case 'high':     return 'bg-[#f59e0b] text-white';
+    case 'medium':   return 'bg-[#eab308] text-black';
+    case 'low':      return 'bg-[#3b82f6] text-white';
+    default:         return 'bg-gray-500 text-white';
+  }
 };
+
+const getSeverityBorderColor = (severity: string) => {
+  switch (severity) {
+    case 'critical': return 'border-l-[#ef4444]';
+    case 'high':     return 'border-l-[#f59e0b]';
+    case 'medium':   return 'border-l-[#eab308]';
+    case 'low':      return 'border-l-[#3b82f6]';
+    default:         return 'border-l-gray-500';
+  }
+};
+
+const getStatusIcon = (status: string) => {
+  switch (status) {
+    case 'open':          return <XCircle className="size-4 text-[#ef4444]" />;
+    case 'investigating': return <Clock className="size-4 text-[#f59e0b]" />;
+    case 'resolved':      return <CheckCircle className="size-4 text-[#10b981]" />;
+    default:              return null;
+  }
+};
+
+const SEVERITY_ORDER = ['critical', 'high', 'medium', 'low'];
+
+// ─── Component ────────────────────────────────────────────────────────────────
 
 export function AlertsPage() {
   const [alerts, setAlerts] = useState<AlertItem[]>([]);
   const [selectedAlert, setSelectedAlert] = useState<AlertItem | null>(null);
-  const [statusFilter, setStatusFilter] = useState<'all' | 'open' | 'investigating' | 'resolved'>('all');
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [isUpdating, setIsUpdating] = useState(false);
 
-  useEffect(() => {
-    let isMounted = true;
+  // Mirrors reference filter shape exactly
+  const [statusFilter, setStatusFilter] = useState<StatusFilter>('all');
+  const [severityFilter, setSeverityFilter] = useState<SeverityFilter>('all');
+  const [sortBy, setSortBy] = useState<SortBy>('newest');
 
-    const loadAlerts = async () => {
-      setIsLoading(true);
-      try {
-        const response = await fetchAlerts();
-        if (!isMounted) return;
-        const normalized = response.map(normalizeAlert);
-        setAlerts(normalized);
-        if (normalized.length > 0) {
-          setSelectedAlert(normalized[0]);
-        }
-        setError(null);
-      } catch (loadError) {
-        if (!isMounted) return;
-        setError(loadError instanceof Error ? loadError.message : 'Failed to load alerts');
-      } finally {
-        if (isMounted) setIsLoading(false);
-      }
-    };
+  // ─── Data fetching ──────────────────────────────────────────────────────
 
-    void loadAlerts();
-    return () => {
-      isMounted = false;
-    };
+  const loadAlerts = useCallback(async () => {
+    setIsLoading(true);
+    setError(null);
+    try {
+      const response = await fetchAlerts();
+      const normalized = response.map(normalizeAlert);
+      setAlerts(normalized);
+      if (normalized.length > 0) setSelectedAlert(normalized[0]);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to load alerts');
+    } finally {
+      setIsLoading(false);
+    }
   }, []);
 
+  useEffect(() => {
+    let cancelled = false;
+    const run = async () => {
+      setIsLoading(true);
+      setError(null);
+      try {
+        const response = await fetchAlerts();
+        if (cancelled) return;
+        const normalized = response.map(normalizeAlert);
+        setAlerts(normalized);
+        if (normalized.length > 0) setSelectedAlert(normalized[0]);
+      } catch (err) {
+        if (cancelled) return;
+        setError(err instanceof Error ? err.message : 'Failed to load alerts');
+      } finally {
+        if (!cancelled) setIsLoading(false);
+      }
+    };
+    void run();
+    return () => { cancelled = true; };
+  }, []);
+
+  // ─── Filtering + sorting (mirrors reference useMemo exactly) ───────────
+
   const filteredAlerts = useMemo(
-    () => alerts.filter((alert) => statusFilter === 'all' || alert.status === statusFilter),
-    [alerts, statusFilter],
+    () =>
+      alerts
+        .filter(
+          (alert) =>
+            (statusFilter === 'all' || alert.status === statusFilter) &&
+            (severityFilter === 'all' || alert.severity === severityFilter),
+        )
+        .sort((a, b) => {
+          if (sortBy === 'oldest') {
+            return new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime();
+          }
+          if (sortBy === 'severity') {
+            return SEVERITY_ORDER.indexOf(a.severity) - SEVERITY_ORDER.indexOf(b.severity);
+          }
+          return new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime();
+        }),
+    [alerts, statusFilter, severityFilter, sortBy],
   );
 
-  const getSeverityColor = (severity: string) => {
-    switch (severity) {
-      case 'critical': return 'bg-[#ef4444] text-white';
-      case 'high': return 'bg-[#f59e0b] text-white';
-      case 'medium': return 'bg-[#eab308] text-black';
-      case 'low': return 'bg-[#3b82f6] text-white';
-      default: return 'bg-gray-500 text-white';
+  // ─── Status update (mirrors reference updateAlertStatus pattern) ────────
+
+  const updateAlertStatus = async (
+    newStatus: 'investigating' | 'resolved' | 'false_positive',
+  ) => {
+    if (!selectedAlert || isUpdating) return;
+    setIsUpdating(true);
+
+    // Snapshot for rollback
+    const previousAlerts = alerts;
+    const previousSelected = selectedAlert;
+
+    // Optimistic update
+    setAlerts((prev) =>
+      prev.map((alert) =>
+        alert.id === selectedAlert.id ? { ...alert, status: newStatus } : alert,
+      ),
+    );
+    setSelectedAlert((prev) => (prev ? { ...prev, status: newStatus } : null));
+
+    try {
+      // Wire to your actual patch endpoint, e.g.: await patchAlertStatus(selectedAlert.id, newStatus)
+      await Promise.resolve(); // placeholder
+    } catch (err) {
+      console.error('Failed to update alert status:', err);
+      // Rollback on failure
+      setAlerts(previousAlerts);
+      setSelectedAlert(previousSelected);
+    } finally {
+      setIsUpdating(false);
     }
   };
 
-  const getSeverityBorderColor = (severity: string) => {
-    switch (severity) {
-      case 'critical': return 'border-l-[#ef4444]';
-      case 'high': return 'border-l-[#f59e0b]';
-      case 'medium': return 'border-l-[#eab308]';
-      case 'low': return 'border-l-[#3b82f6]';
-      default: return 'border-l-gray-500';
-    }
-  };
-
-  const getStatusIcon = (status: string) => {
-    switch (status) {
-      case 'open': return <XCircle className="size-4 text-[#ef4444]" />;
-      case 'investigating': return <Clock className="size-4 text-[#f59e0b]" />;
-      case 'resolved': return <CheckCircle className="size-4 text-[#10b981]" />;
-      default: return null;
-    }
-  };
+  // ─── Render ──────────────────────────────────────────────────────────────
 
   return (
     <div className="space-y-6">
+
+      {/* ── Header + Filters ──────────────────────────────────────────── */}
       <div className="bg-[#0f0f17] border border-[#1f1f2e] p-6">
         <div className="flex items-center justify-between mb-4">
           <div>
@@ -185,38 +277,115 @@ export function AlertsPage() {
           </div>
         </div>
 
+        {/* Status filter tabs */}
         <div className="flex flex-wrap gap-2">
-          {(['all', 'open', 'investigating', 'resolved'] as const).map((value) => (
+          <button
+            onClick={() => setStatusFilter('all')}
+            className={`px-4 py-2 text-sm ${
+              statusFilter === 'all' ? 'bg-[#4f46e5] text-white' : 'bg-[#1a1a24] text-gray-400 hover:text-white'
+            }`}
+          >
+            All ({alerts.length})
+          </button>
+          <button
+            onClick={() => setStatusFilter('open')}
+            className={`px-4 py-2 text-sm ${
+              statusFilter === 'open' ? 'bg-[#4f46e5] text-white' : 'bg-[#1a1a24] text-gray-400 hover:text-white'
+            }`}
+          >
+            Open ({alerts.filter((a) => a.status === 'open').length})
+          </button>
+          <button
+            onClick={() => setStatusFilter('investigating')}
+            className={`px-4 py-2 text-sm ${
+              statusFilter === 'investigating' ? 'bg-[#4f46e5] text-white' : 'bg-[#1a1a24] text-gray-400 hover:text-white'
+            }`}
+          >
+            Investigating ({alerts.filter((a) => a.status === 'investigating').length})
+          </button>
+          <button
+            onClick={() => setStatusFilter('resolved')}
+            className={`px-4 py-2 text-sm ${
+              statusFilter === 'resolved' ? 'bg-[#4f46e5] text-white' : 'bg-[#1a1a24] text-gray-400 hover:text-white'
+            }`}
+          >
+            Resolved ({alerts.filter((a) => a.status === 'resolved').length})
+          </button>
+          <button
+            onClick={() => setStatusFilter('false_positive')}
+            className={`px-4 py-2 text-sm ${
+              statusFilter === 'false_positive'
+                ? 'bg-[#1a1a24] border border-[#ef4444] text-[#ef4444]'
+                : 'bg-[#1a1a24] text-gray-400 hover:text-white'
+            }`}
+          >
+            False Positive ({alerts.filter((a) => a.status === 'false_positive').length})
+          </button>
+        </div>
+
+        {/* Severity filter row */}
+        <div className="flex flex-wrap gap-2 mt-3">
+          {(['all', 'critical', 'high', 'medium', 'low'] as const).map((severity) => (
             <button
-              key={value}
-              onClick={() => setStatusFilter(value)}
+              key={severity}
+              onClick={() => setSeverityFilter(severity)}
               className={`px-4 py-2 text-sm ${
-                statusFilter === value
-                  ? 'bg-[#4f46e5] text-white'
+                severityFilter === severity
+                  ? getSeverityColor(severity)
                   : 'bg-[#1a1a24] text-gray-400 hover:text-white'
               }`}
             >
-              {value === 'all'
-                ? `All (${alerts.length})`
-                : `${value.charAt(0).toUpperCase() + value.slice(1)} (${alerts.filter((a) => a.status === value).length})`}
+              {severity === 'all' ? 'All' : severity.charAt(0).toUpperCase() + severity.slice(1)}
             </button>
           ))}
         </div>
       </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        <div className="space-y-4">
+      {/* ── List + Detail ──────────────────────────────────────────────── */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 lg:h-[calc(100vh-240px)] lg:overflow-hidden">
+
+        {/* Alert list */}
+        <div className="space-y-4 lg:h-full lg:overflow-y-auto lg:pr-1">
+
+          {/* Sort controls */}
+          <div className="flex items-center justify-between">
+            <span className="text-xs text-gray-500">Sort by:</span>
+            <div className="flex gap-2">
+              {(['newest', 'oldest', 'severity'] as const).map((option) => (
+                <button
+                  key={option}
+                  onClick={() => setSortBy(option)}
+                  className={`px-3 py-1 text-xs ${
+                    sortBy === option ? 'bg-[#4f46e5] text-white' : 'bg-[#1a1a24] text-gray-400 hover:text-white'
+                  }`}
+                >
+                  {option.charAt(0).toUpperCase() + option.slice(1)}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {/* States: loading / error / empty / list */}
           {isLoading ? (
-            Array.from({ length: 3 }).map((_, index) => (
-              <div key={index} className="h-28 bg-[#0f0f17] border border-[#1f1f2e] animate-pulse" />
-            ))
+            <div className="space-y-4">
+              {Array.from({ length: 3 }).map((_, i) => (
+                <div key={`skeleton-${i}`} className="h-[160px] animate-pulse bg-[#1a1a24] border border-[#1f1f2e]" />
+              ))}
+            </div>
           ) : error ? (
-            <div className="bg-[#0f0f17] border border-[#1f1f2e] p-6 text-sm text-[#fca5a5]">
-              {error}
+            <div className="bg-[#0f0f17] border border-[#1f1f2e] p-6">
+              <p className="text-sm text-[#fca5a5]">{error}</p>
+              <button
+                onClick={loadAlerts}
+                className="mt-3 text-xs text-[#4f46e5] hover:text-[#6366f1] underline underline-offset-2"
+              >
+                Retry
+              </button>
             </div>
           ) : filteredAlerts.length === 0 ? (
-            <div className="bg-[#0f0f17] border border-[#1f1f2e] p-6 text-sm text-gray-400">
-              No alerts match the selected filter.
+            <div className="bg-[#0f0f17] border border-[#1f1f2e] p-12 text-center">
+              <AlertTriangle className="size-10 text-gray-600 mx-auto mb-3" />
+              <p className="text-gray-400">No alerts match the current filters</p>
             </div>
           ) : (
             filteredAlerts.map((alert) => (
@@ -233,14 +402,14 @@ export function AlertsPage() {
                     <div>
                       <div className="flex flex-wrap items-center gap-2">
                         <h3 className="text-white font-medium">{alert.title}</h3>
-                        {typeof alert.occurrenceCount === 'number' && alert.occurrenceCount > 1 ? (
+                        {typeof alert.occurrenceCount === 'number' && alert.occurrenceCount > 1 && (
                           <span
                             title="Grouped emissions in the SIEM dedup window"
                             className="text-[11px] font-semibold uppercase tracking-wide px-2 py-0.5 rounded bg-[#4f46e5]/25 text-[#a5b4fc] border border-[#4f46e5]/35"
                           >
                             ×{alert.occurrenceCount}
                           </span>
-                        ) : null}
+                        )}
                       </div>
                       <p className="text-xs text-gray-500 font-mono mt-1">{alert.id}</p>
                     </div>
@@ -257,7 +426,7 @@ export function AlertsPage() {
                     <span className="text-gray-500 font-mono">{alert.timestamp}</span>
                     <div className="flex items-center gap-1">
                       {getStatusIcon(alert.status)}
-                      <span className="text-gray-400 capitalize">{alert.status}</span>
+                      <span className="text-gray-400 capitalize">{alert.status.replace('_', ' ')}</span>
                     </div>
                   </div>
                   <button className="text-[#4f46e5] hover:text-[#6366f1] flex items-center gap-1">
@@ -270,18 +439,19 @@ export function AlertsPage() {
           )}
         </div>
 
-        <div className="lg:sticky lg:top-6 h-fit">
+        {/* Detail panel */}
+        <div className="h-fit lg:sticky lg:top-6 lg:h-full lg:overflow-y-auto lg:pr-1">
           {selectedAlert ? (
             <div className="bg-[#0f0f17] border border-[#1f1f2e] p-6">
               <div className="flex items-start justify-between mb-6">
                 <div>
                   <div className="flex flex-wrap items-center gap-2 mb-2">
                     <h3 className="text-xl text-white font-medium">{selectedAlert.title}</h3>
-                    {typeof selectedAlert.occurrenceCount === 'number' && selectedAlert.occurrenceCount > 1 ? (
+                    {typeof selectedAlert.occurrenceCount === 'number' && selectedAlert.occurrenceCount > 1 && (
                       <span className="text-xs font-semibold px-2 py-1 rounded bg-[#4f46e5]/25 text-[#a5b4fc] border border-[#4f46e5]/35">
                         {selectedAlert.occurrenceCount} grouped hits
                       </span>
-                    ) : null}
+                    )}
                   </div>
                   <p className="text-sm text-gray-400 font-mono">{selectedAlert.id}</p>
                 </div>
@@ -290,6 +460,7 @@ export function AlertsPage() {
                 </span>
               </div>
 
+              {/* Anomaly indicator — kept from new page theme */}
               <div className="bg-[#1a1a24] border border-[#f59e0b] p-4 mb-6">
                 <div className="flex items-center gap-2 mb-2">
                   <div className="size-2 rounded-full bg-[#f59e0b] animate-pulse" />
@@ -306,7 +477,8 @@ export function AlertsPage() {
                   <p className="text-sm text-gray-400">{selectedAlert.description}</p>
                 </div>
 
-                {typeof selectedAlert.occurrenceCount === 'number' && selectedAlert.occurrenceCount > 1 ? (
+                {/* Deduplication block */}
+                {typeof selectedAlert.occurrenceCount === 'number' && selectedAlert.occurrenceCount > 1 && (
                   <div className="rounded border border-[#2f2f3e] bg-[#1a1a24] px-4 py-3">
                     <h4 className="text-sm font-medium text-white mb-2">Deduplication</h4>
                     <dl className="grid grid-cols-2 gap-3 text-sm">
@@ -314,12 +486,12 @@ export function AlertsPage() {
                         <dt className="text-gray-500">Occurrences</dt>
                         <dd className="text-gray-200 font-mono">{selectedAlert.occurrenceCount}</dd>
                       </div>
-                      {selectedAlert.firstTriggeredAt ? (
+                      {selectedAlert.firstTriggeredAt && (
                         <div>
                           <dt className="text-gray-500">First seen</dt>
                           <dd className="text-gray-200">{selectedAlert.firstTriggeredAt}</dd>
                         </div>
-                      ) : null}
+                      )}
                       <div>
                         <dt className="text-gray-500">Last seen</dt>
                         <dd className="text-gray-200">{selectedAlert.timestamp}</dd>
@@ -329,7 +501,7 @@ export function AlertsPage() {
                       Multiple emissions for the same IP and rule within the backend time window roll into one alert row.
                     </p>
                   </div>
-                ) : null}
+                )}
 
                 <div className="grid grid-cols-2 gap-4">
                   <div>
@@ -339,9 +511,9 @@ export function AlertsPage() {
                   <div>
                     <h4 className="text-sm font-medium text-white mb-2">Attacker Location</h4>
                     <p className="text-sm text-gray-400">{selectedAlert.attackerLocation}</p>
-                    {selectedAlert.attackerIsp ? (
+                    {selectedAlert.attackerIsp && (
                       <p className="text-xs text-gray-500 mt-1">{selectedAlert.attackerIsp}</p>
-                    ) : null}
+                    )}
                   </div>
                   <div>
                     <h4 className="text-sm font-medium text-white mb-2">Target IP</h4>
@@ -355,7 +527,9 @@ export function AlertsPage() {
                     <h4 className="text-sm font-medium text-white mb-2">Status</h4>
                     <div className="flex items-center gap-2">
                       {getStatusIcon(selectedAlert.status)}
-                      <span className="text-sm text-gray-400 capitalize">{selectedAlert.status}</span>
+                      <span className="text-sm text-gray-400 capitalize">
+                        {selectedAlert.status.replace('_', ' ')}
+                      </span>
                     </div>
                   </div>
                 </div>
@@ -391,12 +565,28 @@ export function AlertsPage() {
                   </ul>
                 </div>
 
+                {/* Action buttons — wired to updateAlertStatus with disabled states */}
                 <div className="flex gap-2 pt-4 border-t border-[#1f1f2e]">
-                  <button className="flex-1 bg-[#4f46e5] hover:bg-[#4338ca] text-white px-4 py-2 text-sm">
-                    Take Action
+                  <button
+                    onClick={() => updateAlertStatus('investigating')}
+                    disabled={isUpdating || selectedAlert.status === 'investigating'}
+                    className="flex-1 bg-[#4f46e5] hover:bg-[#4338ca] text-white px-4 py-2 text-sm disabled:opacity-50 disabled:cursor-not-allowed"
+                  >
+                    Investigate
                   </button>
-                  <button className="flex-1 bg-[#1a1a24] hover:bg-[#2a2a3a] border border-[#2a2a3a] text-white px-4 py-2 text-sm">
+                  <button
+                    onClick={() => updateAlertStatus('resolved')}
+                    disabled={isUpdating || selectedAlert.status === 'resolved'}
+                    className="flex-1 bg-[#1a1a24] hover:bg-[#2a2a3a] border border-[#2a2a3a] text-white px-4 py-2 text-sm disabled:opacity-50 disabled:cursor-not-allowed"
+                  >
                     Mark Resolved
+                  </button>
+                  <button
+                    onClick={() => updateAlertStatus('false_positive')}
+                    disabled={isUpdating || selectedAlert.status === 'false_positive'}
+                    className="bg-[#1a1a24] border border-[#ef4444] text-[#ef4444] px-4 py-2 text-sm disabled:opacity-50 disabled:cursor-not-allowed"
+                  >
+                    False Positive
                   </button>
                 </div>
               </div>

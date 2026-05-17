@@ -1,4 +1,4 @@
-import { Body, Controller, Delete, Get, Post, Req, UseGuards } from '@nestjs/common';
+import { Body, Controller, Delete, Get, Param, Post, Req, UseGuards } from '@nestjs/common';
 import { LogsService } from './logs.service';
 import { CreateLogDto } from './log.dto';
 import { Roles } from '../auth/decorators/roles.decorator';
@@ -32,6 +32,13 @@ export class LogsController {
   @Roles('security_analyst')
   async list(@Req() request: AuthenticatedRequest) {
     return this.logsService.list(request.user!);
+  }
+
+  // DELETE /api/logs
+  @Delete(':id')
+  @Roles('security_analyst')
+  async remove(@Param('id') id: string, @Req() request: AuthenticatedRequest) {
+    return this.logsService.deleteOne(id, request.user!);
   }
 
   // DELETE /api/logs
