@@ -1,6 +1,10 @@
 import { NestFactory } from '@nestjs/core';
 import { ConfigService } from '@nestjs/config';
+import { setDefaultResultOrder } from 'node:dns';
 import { AppModule } from './app.module';
+
+// Avoid intermittent "fetch failed" to Google APIs on Windows (IPv6/DNS ordering).
+setDefaultResultOrder('ipv4first');
 
 async function bootstrap() {
   const app = await NestFactory.create(AppModule);

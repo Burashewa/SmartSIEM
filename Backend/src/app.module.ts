@@ -2,6 +2,7 @@ import { Module } from '@nestjs/common';
 import { MongooseModule } from '@nestjs/mongoose';
 import { ConfigModule, ConfigService } from '@nestjs/config';
 import { ServeStaticModule } from '@nestjs/serve-static';
+import { existsSync } from 'fs';
 import { join } from 'path';
 import { DashboardModule } from './dashboard/dashboard.module';
 import { LogsModule } from './logs/logs.module';
@@ -14,11 +15,22 @@ import { AlertAssistantModule } from './alert-assistant/alert-assistant.module';
 import { ScheduleModule } from '@nestjs/schedule';
 import { ReportsModule } from './reports/reports.module';
 
+/** Resolve .env regardless of whether the process was started from Backend/ or SmartSIEM/. */
+function resolveEnvFilePaths(): string[] {
+  const candidates = [
+    join(__dirname, '..', '.env'),
+    join(__dirname, '..', '..', '.env'),
+    join(process.cwd(), '.env'),
+    join(process.cwd(), '..', '.env'),
+  ];
+  return [...new Set(candidates.filter((path) => existsSync(path)))];
+}
+
 @Module({
   imports: [
     ConfigModule.forRoot({
       isGlobal: true,
-      envFilePath: [join(process.cwd(), '.env'), join(process.cwd(), '..', '.env')],
+      envFilePath: resolveEnvFilePaths(),
     }),
     ScheduleModule.forRoot(),
     ServeStaticModule.forRoot({
