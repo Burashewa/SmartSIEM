@@ -168,3 +168,30 @@ export async function fetchAlerts(): Promise<BackendAlertRecord[]> {
 
   return response.json() as Promise<BackendAlertRecord[]>;
 }
+
+export async function fetchAlertById(id: string): Promise<BackendAlertRecord> {
+  const response = await authFetch(`/api/alerts/${encodeURIComponent(id)}`);
+
+  if (!response.ok) {
+    throw new Error(`Failed to load alert ${id} (${response.status})`);
+  }
+
+  return response.json() as Promise<BackendAlertRecord>;
+}
+
+export async function patchAlertStatus(
+  id: string,
+  status: 'investigating' | 'resolved' | 'false_positive',
+): Promise<void> {
+  const response = await authFetch(`/api/alerts/${encodeURIComponent(id)}/status`, {
+    method: 'PATCH',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({ status }),
+  });
+
+  if (!response.ok) {
+    throw new Error(`Failed to update alert status (${response.status})`);
+  }
+}

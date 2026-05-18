@@ -13,7 +13,7 @@ import { AuthModule } from './auth/auth.module';
 import { AgentsModule } from './agents/agents.module';
 import { AlertAssistantModule } from './alert-assistant/alert-assistant.module';
 import { ScheduleModule } from '@nestjs/schedule';
-// import { ReportsModule } from './reports/reports.module';
+import { ReportsModule } from './reports/reports.module';
 
 /** Resolve .env regardless of whether the process was started from Backend/ or SmartSIEM/. */
 function resolveEnvFilePaths(): string[] {
@@ -61,7 +61,7 @@ function resolveEnvFilePaths(): string[] {
     AuthModule,
     AgentsModule,
     AlertAssistantModule,
-    // ReportsModule,
+    ReportsModule,
   ],
 })
 export class AppModule {}

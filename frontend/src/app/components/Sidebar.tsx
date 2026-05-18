@@ -21,8 +21,9 @@ interface SidebarProps {
 const navItems = [
   { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard },
   { id: 'logs', label: 'Log Management', icon: FileText },
-  { id: 'alerts', label: 'Alerts', icon: AlertTriangle },
-  { id: 'threat-detection', label: 'Threat Detection', icon: Shield },
+  { id: 'alerts-and-threats', label: 'Alerts & Threats', icon: AlertTriangle },
+  // { id: 'alerts', label: 'Alerts', icon: AlertTriangle },
+  // { id: 'threat-detection', label: 'Threat Detection', icon: Shield },
   { id: 'detection-rules', label: 'Detection Rules', icon: GitBranch },
   { id: 'ai-recommendations', label: 'AI Recommendations', icon: Cpu },
   { id: 'access-control', label: 'Access Control', icon: Lock },
@@ -36,14 +37,15 @@ export function Sidebar({ currentPage, onNavigate, role }: SidebarProps) {
   const minimumRoleByPage: Record<string, SiemRole> = {
     dashboard: 'security_analyst',
     logs: 'security_analyst',
-    alerts: 'security_analyst',
-    'threat-detection': 'security_analyst',
+    // alerts: 'security_analyst',
+    // 'threat-detection': 'security_analyst',
     'detection-rules': 'security_analyst',
     'ai-recommendations': 'security_analyst',
     'access-control': 'security_analyst',
     reports: 'security_analyst',
     users: 'security_analyst',
     settings: 'security_analyst',
+    'alerts-and-threats': 'security_analyst',
   };
 
   const allowedItems = navItems.filter(

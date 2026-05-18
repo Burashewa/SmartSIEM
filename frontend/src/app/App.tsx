@@ -13,6 +13,7 @@ import { SettingsPage } from './components/SettingsPage';
 import { UserManagementPage } from './components/UserManagementPage';
 import { LoginScreen } from './components/LoginScreen';
 import { AlertRecommendationChatbot } from './components/AlertRecommendationChatbot';
+import { AlertsAndThreatPage } from './components/Alertsandthreatpage';
 import {
   clearSession,
   getSession,
@@ -120,6 +121,8 @@ export default function App() {
         return <SettingsPage />;
       case 'users':
         return <UserManagementPage />;
+      case 'alerts-and-threats':
+        return <AlertsAndThreatPage />;
       default:
         return <DashboardPage />;
     }

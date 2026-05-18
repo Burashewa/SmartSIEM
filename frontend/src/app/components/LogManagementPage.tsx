@@ -639,23 +639,23 @@ export function LogManagementPage() {
                         </button>
                         {singleDeleteTarget === log.id && (
                           <div
-                            className="absolute right-0 top-7 z-20 w-64 bg-[#0d0d14] border border-[#1e1e2e] p-3 shadow-lg"
+                            className="absolute right-0 top-7 z-20 w-64 bg-[#1a1a2b] border border-[#3b3b5a] p-3 shadow-2xl ring-1 ring-white/10"
                             onClick={(event) => event.stopPropagation()}
                           >
-                            <p className="text-xs text-gray-200">
+                            <p className="text-xs text-white">
                               Delete 1 entry?
                             </p>
                             <div className="mt-3 flex justify-end gap-2">
                               <button
                                 type="button"
-                                className="px-2 py-1 text-xs text-gray-300 border border-[#1e1e2e]"
+                                className="px-2 py-1 text-xs text-gray-100 border border-[#4a4a6b] bg-[#202036] hover:bg-[#2a2a45] hover:border-[#5a5a7d]"
                                 onClick={() => setSingleDeleteTarget(null)}
                               >
                                 Cancel
                               </button>
                               <button
                                 type="button"
-                                className="px-2 py-1 text-xs bg-red-600/20 text-red-300 border border-red-700/40"
+                                className="px-2 py-1 text-xs bg-red-500/35 text-red-50 border border-red-400/70 hover:bg-red-500/45"
                                 onClick={() => void handleConfirmSingleDelete()}
                               >
                                 Delete
@@ -680,20 +680,20 @@ export function LogManagementPage() {
       </div>
 
       {selectedCount > 0 && (
-        <div className="fixed bottom-0 left-0 right-0 z-30 bg-[#0d0d14] border-t border-[#1e1e2e] px-6 py-3">
+        <div className="fixed bottom-0 left-0 right-0 z-30 bg-[#0f0f17] border-t border-[#1e1e2e] px-6 py-3">
           <div className="mx-auto flex w-full max-w-6xl items-center justify-between gap-4">
             <span className="text-sm text-gray-200">{selectedCount} selected</span>
             <div className="flex items-center gap-2">
               <button
                 type="button"
-                className="px-3 py-2 text-sm text-gray-300 border border-[#1e1e2e]"
+                className="px-3 py-2 text-sm text-gray-200 border border-[#2a2a3a] hover:border-[#3a3a4f]"
                 onClick={() => setSelectedIds(new Set())}
               >
                 Clear selection
               </button>
               <button
                 type="button"
-                className="px-3 py-2 text-sm bg-red-600/20 text-red-300 border border-red-700/40"
+                className="px-3 py-2 text-sm bg-red-600/15 text-red-200 border border-red-700/40 hover:bg-red-600/25"
                 onClick={() => setIsBulkConfirmOpen(true)}
               >
                 Delete selected
@@ -705,22 +705,22 @@ export function LogManagementPage() {
 
       {isBulkConfirmOpen && selectedCount > 0 && (
         <div className="fixed inset-0 z-40 flex items-center justify-center bg-black/70 px-4">
-          <div className="w-full max-w-md bg-[#0d0d14] border border-[#1e1e2e] p-5">
+          <div className="w-full max-w-md bg-[#11111a] border border-[#232336] p-5 shadow-xl">
             <h4 className="text-white text-sm font-medium">Confirm deletion</h4>
-            <p className="mt-2 text-sm text-gray-300">
+            <p className="mt-2 text-sm text-gray-200">
               Delete {selectedCount} entr{selectedCount === 1 ? 'y' : 'ies'}?
             </p>
             <div className="mt-5 flex justify-end gap-2">
               <button
                 type="button"
-                className="px-3 py-2 text-sm text-gray-300 border border-[#1e1e2e]"
+                className="px-3 py-2 text-sm text-gray-200 border border-[#2a2a3a] hover:border-[#3a3a4f]"
                 onClick={() => setIsBulkConfirmOpen(false)}
               >
                 Cancel
               </button>
               <button
                 type="button"
-                className="px-3 py-2 text-sm bg-red-600/20 text-red-300 border border-red-700/40"
+                className="px-3 py-2 text-sm bg-red-600/15 text-red-200 border border-red-700/40 hover:bg-red-600/25"
                 onClick={() => void handleBulkDelete()}
               >
                 Delete

@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState, useCallback } from 'react';
 import { AlertTriangle, Clock, CheckCircle, XCircle, Eye } from 'lucide-react';
-import { fetchAlerts, type BackendAlertRecord } from '../api/dashboard';
+import { fetchAlerts, patchAlertStatus, type BackendAlertRecord } from '../api/dashboard';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -245,8 +245,7 @@ export function AlertsPage() {
     setSelectedAlert((prev) => (prev ? { ...prev, status: newStatus } : null));
 
     try {
-      // Wire to your actual patch endpoint, e.g.: await patchAlertStatus(selectedAlert.id, newStatus)
-      await Promise.resolve(); // placeholder
+      await patchAlertStatus(selectedAlert.id, newStatus);
     } catch (err) {
       console.error('Failed to update alert status:', err);
       // Rollback on failure

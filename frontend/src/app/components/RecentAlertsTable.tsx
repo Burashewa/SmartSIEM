@@ -1,7 +1,8 @@
 import { useState } from 'react';
 import { ChevronRight } from 'lucide-react';
 import { AlertDeepDiveModal } from './AlertDeepDiveModal';
-import type { RecentAlertRecord } from '../lib/dashboardWidgets';
+import { buildRecentAlerts, type RecentAlertRecord } from '../lib/dashboardWidgets';
+import { fetchAlertById } from '../api/dashboard';
 
 interface RecentAlertsTableProps {
   alerts: RecentAlertRecord[];
@@ -9,17 +10,74 @@ interface RecentAlertsTableProps {
   error?: string | null;
 }
 
+const toUiStatus = (
+  status?: string,
+): 'open' | 'investigating' | 'resolved' | 'false_positive' => {
+  if (!status) {
+    return 'open';
+  }
+
+  const normalized = status.toLowerCase().trim();
+
+  if (normalized === 'new' || normalized === 'open') {
+    return 'open';
+  }
+
+  if (
+    normalized === 'investigating' ||
+    normalized === 'in-progress' ||
+    normalized === 'in_progress'
+  ) {
+    return 'investigating';
+  }
+
+  if (normalized === 'resolved') {
+    return 'resolved';
+  }
+
+  if (
+    normalized === 'false_positive' ||
+    normalized === 'false-positive'
+  ) {
+    return 'false_positive';
+  }
+
+  return 'open';
+};
+
 export function RecentAlertsTable({
   alerts,
   isLoading = false,
   error = null,
 }: RecentAlertsTableProps) {
-  const [selectedAlert, setSelectedAlert] = useState<RecentAlertRecord | null>(null);
-  const [isModalOpen, setIsModalOpen] = useState(false);
+  const [selectedAlert, setSelectedAlert] =
+    useState<RecentAlertRecord | null>(null);
 
-  const handleViewAlert = (alert: RecentAlertRecord) => {
-    setSelectedAlert(alert);
-    setIsModalOpen(true);
+  const [isModalOpen, setIsModalOpen] = useState(false);
+  const [loadingAlertId, setLoadingAlertId] = useState<string | null>(null);
+
+  const handleViewAlert = async (alert: RecentAlertRecord) => {
+    if (loadingAlertId) return;
+
+    const alertId = alert.alertId ?? alert.id;
+
+    setLoadingAlertId(alertId);
+
+    try {
+      const freshAlert = await fetchAlertById(alertId);
+      const normalized = buildRecentAlerts([freshAlert])[0];
+
+      if (!normalized) {
+        throw new Error(`Alert ${alertId} could not be normalized`);
+      }
+
+      setSelectedAlert(normalized);
+      setIsModalOpen(true);
+    } catch (err) {
+      console.error('Failed to load alert details', err);
+    } finally {
+      setLoadingAlertId(null);
+    }
   };
 
   const handleCloseModal = () => {
@@ -31,32 +89,53 @@ export function RecentAlertsTable({
     switch (severity) {
       case 'critical':
         return 'bg-[#ef4444] text-white';
+
       case 'high':
         return 'bg-[#f59e0b] text-white';
+
       case 'medium':
         return 'bg-[#eab308] text-black';
+
       case 'low':
         return 'bg-[#3b82f6] text-white';
+
       default:
         return 'bg-gray-500 text-white';
     }
   };
 
-  const getStatusColor = (status: RecentAlertRecord['status']) => {
-    switch (status) {
-      case 'New':
+  const getStatusColor = (status?: string) => {
+    const uiStatus = toUiStatus(status);
+
+    switch (uiStatus) {
+      case 'open':
         return 'bg-[#ef4444]/20 text-[#ef4444] border-[#ef4444]/30';
-      case 'In-Progress':
+
+      case 'investigating':
         return 'bg-[#f59e0b]/20 text-[#f59e0b] border-[#f59e0b]/30';
-      case 'Resolved':
+
+      case 'resolved':
         return 'bg-[#10b981]/20 text-[#10b981] border-[#10b981]/30';
+
+      case 'false_positive':
+        return 'bg-[#7f1d1d]/20 text-[#fca5a5] border-[#7f1d1d]/30';
+
       default:
         return 'bg-gray-700/20 text-gray-400 border-gray-700/30';
     }
   };
 
+  const getStatusLabel = (status?: string) => {
+    const normalized = toUiStatus(status);
+    return normalized
+      .split('_')
+      .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+      .join(' ');
+  };
+
   const formatTimestamp = (timestamp: string) => {
     const date = new Date(timestamp);
+
     return date.toLocaleString('en-US', {
       month: 'short',
       day: 'numeric',
@@ -69,9 +148,15 @@ export function RecentAlertsTable({
     <div className="bg-[#0f0f17] border border-[#1f1f2e] p-6">
       <div className="flex items-center justify-between mb-4">
         <div>
-          <h3 className="text-lg font-medium text-white">Recent Alerts</h3>
-          <p className="text-sm text-gray-400 mt-1">Latest security events</p>
+          <h3 className="text-lg font-medium text-white">
+            Recent Alerts
+          </h3>
+
+          <p className="text-sm text-gray-400 mt-1">
+            Latest security events
+          </p>
         </div>
+
         <button className="text-sm text-[#4f46e5] hover:text-[#6366f1] flex items-center gap-1">
           {alerts.length} Loaded
           <ChevronRight className="size-4" />
@@ -85,36 +170,48 @@ export function RecentAlertsTable({
               <th className="text-left py-3 px-4 text-xs font-medium text-gray-400 uppercase">
                 Timestamp
               </th>
+
               <th className="text-left py-3 px-4 text-xs font-medium text-gray-400 uppercase">
                 Severity
               </th>
+
               <th className="text-left py-3 px-4 text-xs font-medium text-gray-400 uppercase">
                 Source IP
               </th>
+
               <th className="text-left py-3 px-4 text-xs font-medium text-gray-400 uppercase">
                 Destination / Resource
               </th>
+
               <th className="text-left py-3 px-4 text-xs font-medium text-gray-400 uppercase">
                 Rule Name
               </th>
+
               <th className="text-left py-3 px-4 text-xs font-medium text-gray-400 uppercase">
                 Hits
               </th>
+
               <th className="text-left py-3 px-4 text-xs font-medium text-gray-400 uppercase">
                 Log Source
               </th>
+
               <th className="text-left py-3 px-4 text-xs font-medium text-gray-400 uppercase">
                 Status
               </th>
+
               <th className="text-left py-3 px-4 text-xs font-medium text-gray-400 uppercase">
                 Action
               </th>
             </tr>
           </thead>
+
           <tbody>
             {isLoading ? (
               <tr>
-                <td colSpan={9} className="px-4 py-8 text-center text-sm text-gray-500">
+                <td
+                  colSpan={9}
+                  className="px-4 py-8 text-center text-sm text-gray-500"
+                >
                   Loading recent alerts from the backend...
                 </td>
               </tr>
@@ -122,7 +219,10 @@ export function RecentAlertsTable({
 
             {!isLoading && error ? (
               <tr>
-                <td colSpan={9} className="px-4 py-8 text-center text-sm text-[#fca5a5]">
+                <td
+                  colSpan={9}
+                  className="px-4 py-8 text-center text-sm text-[#fca5a5]"
+                >
                   {error}
                 </td>
               </tr>
@@ -130,7 +230,10 @@ export function RecentAlertsTable({
 
             {!isLoading && !error && alerts.length === 0 ? (
               <tr>
-                <td colSpan={9} className="px-4 py-8 text-center text-sm text-gray-500">
+                <td
+                  colSpan={9}
+                  className="px-4 py-8 text-center text-sm text-gray-500"
+                >
                   No alerts have been triggered yet.
                 </td>
               </tr>
@@ -145,6 +248,7 @@ export function RecentAlertsTable({
                     <td className="py-3 px-4 text-sm font-mono text-gray-300">
                       {formatTimestamp(alert.timestamp)}
                     </td>
+
                     <td className="py-3 px-4">
                       <span
                         className={`text-xs font-medium px-2 py-1 uppercase ${getSeverityColor(alert.severity)}`}
@@ -152,24 +256,37 @@ export function RecentAlertsTable({
                         {alert.severity}
                       </span>
                     </td>
+
                     <td className="py-3 px-4 text-sm font-mono text-gray-300">
                       {alert.sourceIp}
                     </td>
+
                     <td className="py-3 px-4 text-sm font-mono text-gray-300">
                       {alert.destination}
                     </td>
+
                     <td className="py-3 px-4 text-sm text-gray-300 max-w-[240px]">
-                      <div className="font-medium truncate" title={alert.ruleName}>
+                      <div
+                        className="font-medium truncate"
+                        title={alert.ruleName}
+                      >
                         {alert.ruleName}
                       </div>
-                      {alert.description && alert.description !== alert.ruleName ? (
-                        <div className="text-xs text-gray-500 truncate mt-0.5" title={alert.description}>
+
+                      {alert.description &&
+                      alert.description !== alert.ruleName ? (
+                        <div
+                          className="text-xs text-gray-500 truncate mt-0.5"
+                          title={alert.description}
+                        >
                           {alert.description}
                         </div>
                       ) : null}
                     </td>
+
                     <td className="py-3 px-4 text-sm text-gray-300">
-                      {typeof alert.occurrenceCount === 'number' && alert.occurrenceCount >= 2 ? (
+                      {typeof alert.occurrenceCount === 'number' &&
+                      alert.occurrenceCount >= 2 ? (
                         <span
                           className="inline-flex items-center rounded bg-[#4f46e5]/20 px-2 py-0.5 text-xs font-mono text-[#a5b4fc] border border-[#4f46e5]/30"
                           title={`${alert.occurrenceCount} grouped events (dedup)`}
@@ -180,22 +297,28 @@ export function RecentAlertsTable({
                         <span className="text-gray-600">1</span>
                       )}
                     </td>
+
                     <td className="py-3 px-4 text-sm font-mono text-white">
                       {alert.logSource}
                     </td>
+
                     <td className="py-3 px-4">
                       <span
-                        className={`inline-flex text-xs font-medium px-2 py-1 border ${getStatusColor(alert.status)}`}
+                        className={`inline-flex text-xs font-medium px-2 py-1 border ${getStatusColor(
+                          alert.status,
+                        )}`}
                       >
-                        {alert.status}
+                        {getStatusLabel(alert.status)}
                       </span>
                     </td>
+
                     <td className="py-3 px-4">
                       <button
-                        className="text-[#4f46e5] hover:text-[#6366f1] text-sm"
-                        onClick={() => handleViewAlert(alert)}
+                        className="text-[#4f46e5] hover:text-[#6366f1] text-sm disabled:opacity-60 disabled:cursor-not-allowed"
+                        onClick={() => void handleViewAlert(alert)}
+                        disabled={Boolean(loadingAlertId)}
                       >
-                        View
+                        {loadingAlertId === alert.id ? 'Loading...' : 'View'}
                       </button>
                     </td>
                   </tr>

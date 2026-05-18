@@ -1,5 +1,8 @@
-import { Controller, Delete, Get, Param, Req } from '@nestjs/common';
+import { Body, Controller, Delete, Get, Param, Patch, Req, Res } from '@nestjs/common';
+import { InjectModel } from '@nestjs/mongoose';
+import { Model, Types } from 'mongoose';
 import { AlertsService } from './alerts.service';
+import { Alert } from './alert.schema';
 import { Roles } from '../auth/decorators/roles.decorator';
 import { AuthJwtPayload } from '../auth/auth.types';
 
@@ -9,7 +12,10 @@ type AuthenticatedRequest = {
 
 @Controller('alerts')
 export class AlertsController {
-  constructor(private readonly alertsService: AlertsService) {}
+  constructor(
+    private readonly alertsService: AlertsService,
+    @InjectModel(Alert.name) private readonly alertModel: Model<Alert>,
+  ) {}
 
   // GET /api/alerts
   @Get()
@@ -23,6 +29,44 @@ export class AlertsController {
   @Roles('security_analyst')
   async getOne(@Param('id') id: string, @Req() request: AuthenticatedRequest) {
     return this.alertsService.findById(id, request.user!);
+  }
+
+  // PATCH /api/alerts/:id/status
+  @Patch(':id/status')
+  @Roles('security_analyst')
+  async updateStatus(
+    @Param('id') id: string,
+    @Body() body: { status?: string },
+    @Req() request: AuthenticatedRequest,
+    @Res() response: any,
+  ) {
+    const allowedStatuses = ['investigating', 'resolved', 'false_positive'] as const;
+    const status = body?.status;
+
+    if (!Types.ObjectId.isValid(id) || !status || !allowedStatuses.includes(status as (typeof allowedStatuses)[number])) {
+      return response.status(400).json({ error: 'Invalid status' });
+    }
+
+    try {
+      const user = request.user!;
+      const ownershipFilter =
+        user.role === 'admin' ? {} : { userId: new Types.ObjectId(user.sub) };
+      const updated = await this.alertModel
+        .findOneAndUpdate(
+          { _id: id, ...ownershipFilter },
+          { $set: { status } },
+          { new: true },
+        )
+        .exec();
+
+      if (!updated) {
+        return response.status(404).json({ error: 'Alert not found' });
+      }
+
+      return response.status(200).json(updated);
+    } catch {
+      return response.status(500).json({ error: 'Failed to update status' });
+    }
   }
 
   // DELETE /api/alerts

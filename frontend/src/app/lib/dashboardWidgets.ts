@@ -22,6 +22,7 @@ export interface StreamEvent {
 
 export interface RecentAlertRecord {
   id: string;
+  alertId?: string;
   timestamp: string;
   severity: WidgetSeverity;
   sourceIp: string;
@@ -32,8 +33,9 @@ export interface RecentAlertRecord {
   message?: string;
   occurrenceCount?: number;
   firstTriggeredAt?: string;
+  context?: Record<string, unknown>;
   logSource: string;
-  status: 'New' | 'In-Progress' | 'Resolved';
+  status: string;
   ruleId: string;
   ruleName: string;
   attackerLocation: string;
@@ -202,6 +204,7 @@ export function buildRecentAlerts(alerts: BackendAlertRecord[]): RecentAlertReco
     .slice(0, 10)
     .map((alert, index) => {
       const context = asRecord(alert.context);
+      const backendAlertId = readString(alert._id) ?? readString(alert.id);
       const normalizedRuleId =
         readString(alert.rule_id) ?? readString(alert.ruleId) ?? readString(alert.alert_id) ?? `alert-${index}`;
       const ruleName =
@@ -224,16 +227,17 @@ export function buildRecentAlerts(alerts: BackendAlertRecord[]): RecentAlertReco
 
       const rollup = readPositiveInt(alert.occurrenceCount);
       const backendMessage = readString(alert.message);
+      const backendStatus = readString(alert.status) ?? 'open';
       const narrative =
         backendMessage ??
         (alertDetails.length > 0 ? `${ruleName} - ${alertDetails.join(', ')}` : ruleName);
 
       return {
         id:
-          readString(alert._id) ??
-          readString(alert.id) ??
+          backendAlertId ??
           readString(alert.alert_id) ??
           `${normalizedRuleId}-${readAlertTimestamp(alert)}-${index}`,
+        alertId: backendAlertId,
         timestamp: readAlertTimestamp(alert),
         severity: normalizeSeverity(alert.severity),
         sourceIp:
@@ -253,11 +257,12 @@ export function buildRecentAlerts(alerts: BackendAlertRecord[]): RecentAlertReco
         message: backendMessage,
         occurrenceCount: rollup,
         firstTriggeredAt: readString(alert.firstTriggeredAt),
+        context,
         logSource:
           readString(context?.source) ??
           readString(context?.logSource) ??
           humanizeRuleId(normalizedRuleId),
-        status: normalizeAlertStatus(alert.status),
+        status: normalizeRecentAlertStatus(backendStatus),
         ruleId: normalizedRuleId,
         ruleName,
         attackerLocation:
@@ -409,12 +414,13 @@ function normalizeSeverity(value: unknown): WidgetSeverity {
   return 'low';
 }
 
-function normalizeAlertStatus(value: unknown): RecentAlertRecord['status'] {
-  const status = `${value ?? ''}`.toLowerCase();
-
-  if (status === 'resolved') return 'Resolved';
-  if (status === 'investigating') return 'In-Progress';
-  return 'New';
+function normalizeRecentAlertStatus(status: string): string {
+  const normalized = status.trim().toLowerCase();
+  if (normalized === 'new' || normalized === 'open') return 'open';
+  if (normalized === 'resolved') return 'resolved';
+  if (normalized === 'investigating') return 'investigating';
+  if (normalized === 'false_positive') return 'false_positive';
+  return normalized || 'open';
 }
 
 function humanizeEvent(value: string): string {
@@ -659,7 +665,7 @@ function extractEmailFromRaw(raw?: Record<string, unknown>): string | undefined 
 
   const events = Array.isArray(r.events) ? r.events : [];
   for (const ev of events) {
-    const c = asRecord(ev)?.context;
+    const c = asRecord(asRecord(ev)?.context);
     const em = readString(c?.email) ?? readString(asRecord(c?.body)?.email);
     if (em?.includes('@')) return em;
   }
