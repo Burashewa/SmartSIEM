@@ -3,9 +3,9 @@ import { Sidebar } from './components/Sidebar';
 import { Header } from './components/Header';
 import { DashboardPage } from './components/DashboardPage';
 import { LogManagementPage } from './components/LogManagementPage';
-import { AlertsPage } from './components/AlertsPage';
+// import { AlertsPage } from './components/AlertsPage';
 import { DetectionRulesPage } from './components/DetectionRulesPage';
-import { ThreatDetectionPage } from './components/ThreatDetectionPage';
+// import { ThreatDetectionPage } from './components/ThreatDetectionPage';
 import { AIRecommendationsPage } from './components/AIRecommendationsPage';
 import { AccessControlPage } from './components/AccessControlPage';
 import { ReportsPage } from './components/ReportsPage';
@@ -14,6 +14,8 @@ import { UserManagementPage } from './components/UserManagementPage';
 import { LoginScreen } from './components/LoginScreen';
 import { AlertRecommendationChatbot } from './components/AlertRecommendationChatbot';
 import { AlertsAndThreatPage } from './components/Alertsandthreatpage';
+import { ThreatIntelligencePage } from './components/Threatintelligencepage ';
+import { InvestigationsPage } from './components/Investigationspage';
 import {
   clearSession,
   getSession,
@@ -105,12 +107,16 @@ export default function App() {
         return <DashboardPage />;
       case 'logs':
         return <LogManagementPage />;
-      case 'alerts':
-        return <AlertsPage />;
+      // case 'alerts':
+      //   return <AlertsPage />;
+      case 'threat-intelligence':
+        return <ThreatIntelligencePage />; // this layout should be checked later
       case 'detection-rules':
-        return <DetectionRulesPage />;
-      case 'threat-detection':
-        return <ThreatDetectionPage />;
+        return <DetectionRulesPage />; // this layout should be checked later
+      // case 'threat-detection':
+      //   return <ThreatDetectionPage />;
+      case 'investigations':
+        return <InvestigationsPage />; //this page is currently under development, it has no route yet, but we want to reserve it in the sidebar
       case 'ai-recommendations':
         return <AIRecommendationsPage />;
       case 'access-control':

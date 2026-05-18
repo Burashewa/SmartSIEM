@@ -29,7 +29,7 @@ interface FilterState {
 }
 
 type FilterAction =
-  | { type: 'SET_FILTER'; key: keyof FilterState; value: any }
+  | { type: 'SET_FILTER'; key: keyof FilterState; value: string | LogicalOp }
   | { type: 'TOGGLE_ARRAY_FILTER'; key: 'sources' | 'users' | 'ips'; value: string }
   | { type: 'RESET' };
 
