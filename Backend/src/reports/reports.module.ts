@@ -4,6 +4,7 @@ import { Alert, AlertSchema } from '../alerts/alert.schema';
 import { AlertsModule } from '../alerts/alerts.module';
 import { RecommendationsModule } from '../recommendations/recommendations.module';
 import { ReportsController } from './reports.controller';
+import { ReportAiChatService } from './report-ai-chat.service';
 import { ReportAiEnrichmentService } from './report-ai-enrichment.service';
 import { ReportsService } from './reports.service';
 import { ReportsSchedulerService } from './reports.scheduler';
@@ -15,6 +16,11 @@ import { ReportsSchedulerService } from './reports.scheduler';
     RecommendationsModule,
   ],
   controllers: [ReportsController],
-  providers: [ReportsService, ReportsSchedulerService, ReportAiEnrichmentService],
+  providers: [
+    ReportsService,
+    ReportsSchedulerService,
+    ReportAiEnrichmentService,
+    ReportAiChatService,
+  ],
 })
 export class ReportsModule {}

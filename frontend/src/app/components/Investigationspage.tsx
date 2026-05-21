@@ -3,66 +3,47 @@ import {
   FolderOpen, Plus, Clock, User, AlertTriangle, CheckCircle,
   XCircle, ChevronRight, MessageSquare, Link2, Search,
   RefreshCw, Shield, Activity, TrendingUp, Send, Tag,
-  MoreHorizontal, Paperclip, Eye,
+  MoreHorizontal, Paperclip, Eye, FileText, History, MapPin,
+  Server, ExternalLink,
 } from 'lucide-react';
-import { fetchAlerts, type BackendAlertRecord } from '../api/dashboard';
-
-// ─── Types ──────────────────────────────────────────────────────────────────
-
-type CaseStatus = 'open' | 'in_progress' | 'pending_review' | 'closed';
-type CasePriority = 'critical' | 'high' | 'medium' | 'low';
-
-interface TimelineEntry {
-  id: string;
-  actor: string;
-  action: string;
-  detail?: string;
-  timestamp: string;
-}
-
-interface CaseNote {
-  id: string;
-  author: string;
-  content: string;
-  timestamp: string;
-}
-
-interface LinkedAlert {
-  id: string;
-  title: string;
-  severity: 'critical' | 'high' | 'medium' | 'low';
-  sourceIp: string;
-  timestamp: string;
-}
-
-interface Case {
-  id: string;
-  title: string;
-  description: string;
-  status: CaseStatus;
-  priority: CasePriority;
-  assignee: string;
-  createdAt: string;
-  updatedAt: string;
-  linkedAlerts: LinkedAlert[];
-  notes: CaseNote[];
-  timeline: TimelineEntry[];
-  tags: string[];
-  resolutionNotes?: string;
-}
+import {
+  fetchAlerts,
+  fetchLogs,
+  fetchAlertById,
+  patchAlertStatus,
+  type BackendAlertRecord,
+  type BackendLogRecord,
+} from '../api/dashboard';
+import {
+  type AnalystAlertStatus,
+  getAlertStatusColor,
+  getAlertStatusLabel,
+  normalizeAlertUiStatus,
+} from '../lib/alertStatus';
+import { AlertDeepDiveModal } from './AlertDeepDiveModal';
+import { buildRecentAlerts } from '../lib/dashboardWidgets';
+import {
+  type CaseNote,
+  type CasePriority,
+  type CaseStatus,
+  type InvestigationCase,
+  type TimelineEntry,
+  buildCasesFromAlerts,
+  collectRecommendations,
+  getAlertId,
+  getAlertIp,
+  getAlertTimestamp,
+  getCaseSummaryStats,
+  getIpAlertHistory,
+  getRelatedLogs,
+  humanizeRule,
+} from '../lib/investigationCase';
 
 type StatusFilter = 'all' | CaseStatus;
-
-// ─── Helpers ─────────────────────────────────────────────────────────────────
+type DetailTab = 'overview' | 'alerts' | 'logs' | 'history' | 'timeline' | 'notes';
 
 const readString = (v: unknown): string | undefined =>
   typeof v === 'string' && v.trim() ? v.trim() : undefined;
-
-const humanizeRule = (id?: string): string => {
-  if (!id) return 'Security Alert';
-  return id.replace(/[-_]+/g, ' ').split(' ').filter(Boolean)
-    .map((w) => w.charAt(0).toUpperCase() + w.slice(1)).join(' ');
-};
 
 const formatTs = (ts: string) => {
   const d = new Date(ts);
@@ -78,113 +59,6 @@ const formatRelative = (ts: string) => {
   if (h < 1) return 'just now';
   if (h < 24) return `${h}h ago`;
   return `${d}d ago`;
-};
-
-// Build synthetic cases from alert data grouped by rule
-const buildCasesFromAlerts = (alerts: BackendAlertRecord[]): Case[] => {
-  const groupMap = new Map<string, BackendAlertRecord[]>();
-
-  for (const alert of alerts) {
-    const key =
-      readString(alert.rule_id) ??
-      readString(alert.rule_name) ??
-      'unknown';
-    const arr = groupMap.get(key) ?? [];
-    arr.push(alert);
-    groupMap.set(key, arr);
-  }
-
-  const cases: Case[] = [];
-  let idx = 1;
-
-  for (const [key, group] of groupMap.entries()) {
-    const sorted = [...group].sort(
-      (a, b) =>
-        new Date(b.trigger_time ?? 0).getTime() -
-        new Date(a.trigger_time ?? 0).getTime(),
-    );
-    const first = sorted[0];
-    const oldest = sorted[sorted.length - 1];
-
-    const severities = group.map((a) =>
-      (readString(a.severity) ?? 'low').toLowerCase(),
-    );
-    const priority: CasePriority = severities.includes('critical')
-      ? 'critical'
-      : severities.includes('high')
-      ? 'high'
-      : severities.includes('medium')
-      ? 'medium'
-      : 'low';
-
-    const rawStatus = readString(first.status) ?? 'open';
-    const status: CaseStatus =
-      rawStatus === 'investigating' ? 'in_progress'
-      : rawStatus === 'resolved' || rawStatus === 'closed' ? 'closed'
-      : rawStatus === 'false_positive' ? 'closed'
-      : 'open';
-
-    const ruleName = readString(first.rule_name) ?? humanizeRule(key);
-    const caseId = `CASE-${String(idx).padStart(4, '0')}`;
-
-    const linkedAlerts: LinkedAlert[] = group.slice(0, 5).map((a) => ({
-      id: readString(a.alert_id) ?? readString(a._id) ?? a.id ?? caseId,
-      title: readString(a.rule_name) ?? humanizeRule(readString(a.rule_id)),
-      severity: (readString(a.severity) ?? 'low').toLowerCase() as LinkedAlert['severity'],
-      sourceIp: readString(a.ip) ?? 'Unknown',
-      timestamp: formatTs(a.trigger_time ?? new Date().toISOString()),
-    }));
-
-    const createdAt = oldest.trigger_time ?? new Date().toISOString();
-    const updatedAt = first.trigger_time ?? new Date().toISOString();
-
-    const timeline: TimelineEntry[] = [
-      {
-        id: `${caseId}-t1`,
-        actor: 'Detection Engine',
-        action: 'Case auto-created from grouped alerts',
-        detail: `${group.length} alert(s) matched rule: ${ruleName}`,
-        timestamp: createdAt,
-      },
-      ...(status === 'in_progress'
-        ? [{
-            id: `${caseId}-t2`,
-            actor: 'System Analyst',
-            action: 'Status changed to In Progress',
-            timestamp: updatedAt,
-          }]
-        : []),
-      ...(status === 'closed'
-        ? [{
-            id: `${caseId}-t3`,
-            actor: 'System Analyst',
-            action: 'Case closed',
-            timestamp: updatedAt,
-          }]
-        : []),
-    ];
-
-    cases.push({
-      id: caseId,
-      title: `${ruleName} — ${group.length} event${group.length > 1 ? 's' : ''}`,
-      description: `Grouped investigation for rule "${ruleName}". ${group.length} alert(s) triggered from ${new Set(group.map((a) => readString(a.ip) ?? 'unknown')).size} unique source IP(s).`,
-      status,
-      priority,
-      assignee: 'Unassigned',
-      createdAt,
-      updatedAt,
-      linkedAlerts,
-      notes: [],
-      timeline,
-      tags: [ruleName.split(' ')[0], priority],
-    });
-
-    idx++;
-  }
-
-  return cases.sort(
-    (a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime(),
-  );
 };
 
 // ─── Style maps ──────────────────────────────────────────────────────────────
@@ -213,28 +87,38 @@ const SEVERITY_DOT: Record<string, string> = {
 // ─── Component ────────────────────────────────────────────────────────────────
 
 export function InvestigationsPage() {
-  const [cases, setCases] = useState<Case[]>([]);
-  const [selectedCase, setSelectedCase] = useState<Case | null>(null);
+  const [cases, setCases] = useState<InvestigationCase[]>([]);
+  const [allAlerts, setAllAlerts] = useState<BackendAlertRecord[]>([]);
+  const [allLogs, setAllLogs] = useState<BackendLogRecord[]>([]);
+  const [selectedCase, setSelectedCase] = useState<InvestigationCase | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [statusFilter, setStatusFilter] = useState<StatusFilter>('all');
   const [priorityFilter, setPriorityFilter] = useState<'all' | CasePriority>('all');
   const [search, setSearch] = useState('');
   const [noteInput, setNoteInput] = useState('');
-  const [activeTab, setActiveTab] = useState<'timeline' | 'alerts' | 'notes'>('timeline');
+  const [activeTab, setActiveTab] = useState<DetailTab>('overview');
   const [isUpdatingStatus, setIsUpdatingStatus] = useState(false);
+  const [expandedAlertId, setExpandedAlertId] = useState<string | null>(null);
+  const [deepDiveAlert, setDeepDiveAlert] = useState<ReturnType<typeof buildRecentAlerts>[0] | null>(null);
+  const [deepDiveOpen, setDeepDiveOpen] = useState(false);
+  const [deepDiveLoading, setDeepDiveLoading] = useState(false);
+  const [updatingAlertId, setUpdatingAlertId] = useState<string | null>(null);
   const noteRef = useRef<HTMLTextAreaElement>(null);
-
-  // ── Fetch ─────────────────────────────────────────────────────────────────
 
   const loadCases = useCallback(async () => {
     setIsLoading(true);
     setError(null);
     try {
-      const alerts = await fetchAlerts();
+      const [alerts, logs] = await Promise.all([fetchAlerts(), fetchLogs()]);
+      setAllAlerts(alerts);
+      setAllLogs(logs);
       const built = buildCasesFromAlerts(alerts);
       setCases(built);
-      if (built.length > 0 && !selectedCase) setSelectedCase(built[0]);
+      setSelectedCase((prev) => {
+        if (!prev) return built[0] ?? null;
+        return built.find((c) => c.id === prev.id) ?? built[0] ?? null;
+      });
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to load cases');
     } finally {
@@ -243,26 +127,28 @@ export function InvestigationsPage() {
   }, []);
 
   useEffect(() => {
-    let cancelled = false;
-    const run = async () => {
-      setIsLoading(true);
-      setError(null);
-      try {
-        const alerts = await fetchAlerts();
-        if (cancelled) return;
-        const built = buildCasesFromAlerts(alerts);
-        setCases(built);
-        if (built.length > 0) setSelectedCase(built[0]);
-      } catch (err) {
-        if (cancelled) return;
-        setError(err instanceof Error ? err.message : 'Failed to load cases');
-      } finally {
-        if (!cancelled) setIsLoading(false);
-      }
-    };
-    void run();
-    return () => { cancelled = true; };
-  }, []);
+    void loadCases();
+  }, [loadCases]);
+
+  const relatedLogs = useMemo(() => {
+    if (!selectedCase) return [];
+    return getRelatedLogs(allLogs, selectedCase);
+  }, [allLogs, selectedCase]);
+
+  const ipHistoryAlerts = useMemo(() => {
+    if (!selectedCase) return [];
+    return getIpAlertHistory(allAlerts, selectedCase);
+  }, [allAlerts, selectedCase]);
+
+  const recommendations = useMemo(() => {
+    if (!selectedCase) return [];
+    return collectRecommendations(selectedCase);
+  }, [selectedCase]);
+
+  const caseStats = useMemo(() => {
+    if (!selectedCase) return null;
+    return getCaseSummaryStats(selectedCase, relatedLogs.length);
+  }, [selectedCase, relatedLogs.length]);
 
   // ── Derived ───────────────────────────────────────────────────────────────
 
@@ -298,7 +184,7 @@ export function InvestigationsPage() {
       timestamp: new Date().toISOString(),
     };
 
-    const updated: Case = {
+    const updated: InvestigationCase = {
       ...selectedCase,
       status: newStatus,
       updatedAt: new Date().toISOString(),
@@ -308,6 +194,65 @@ export function InvestigationsPage() {
     setCases((prev) => prev.map((c) => (c.id === selectedCase.id ? updated : c)));
     setSelectedCase(updated);
     setTimeout(() => setIsUpdatingStatus(false), 400);
+  };
+
+  const updateAlertDisposition = async (alertId: string, status: AnalystAlertStatus) => {
+    if (updatingAlertId) return;
+    setUpdatingAlertId(alertId);
+    try {
+      await patchAlertStatus(alertId, status);
+      setAllAlerts((prev) => {
+        const next = prev.map((a) =>
+          getAlertId(a) === alertId ? { ...a, status } : a,
+        );
+        const built = buildCasesFromAlerts(next);
+        setCases(built);
+        setSelectedCase((sel) => {
+          if (!sel) return sel;
+          const rebuilt = built.find((c) => c.id === sel.id);
+          if (!rebuilt) return sel;
+          return {
+            ...rebuilt,
+            timeline: [
+              ...rebuilt.timeline,
+              {
+                id: `${rebuilt.id}-t${rebuilt.timeline.length + 1}`,
+                actor: 'Analyst',
+                action: `Alert marked as ${getAlertStatusLabel(status)}`,
+                detail: alertId,
+                timestamp: new Date().toISOString(),
+              },
+            ],
+          };
+        });
+        return next;
+      });
+    } catch (err) {
+      console.error('Failed to update alert status:', err);
+    } finally {
+      setUpdatingAlertId(null);
+    }
+  };
+
+  const openAlertDeepDive = async (alert: BackendAlertRecord) => {
+    const id = getAlertId(alert);
+    setDeepDiveLoading(true);
+    try {
+      const fresh = await fetchAlertById(id);
+      const normalized = buildRecentAlerts([fresh])[0];
+      if (normalized) {
+        setDeepDiveAlert(normalized);
+        setDeepDiveOpen(true);
+      }
+    } catch {
+      const normalized = buildRecentAlerts([alert])[0];
+      if (normalized) {
+        setDeepDiveAlert(normalized);
+        setDeepDiveOpen(true);
+      }
+    } finally {
+      setDeepDiveLoading(false);
+    }
   };
 
   const addNote = () => {
@@ -328,7 +273,7 @@ export function InvestigationsPage() {
       timestamp: new Date().toISOString(),
     };
 
-    const updated: Case = {
+    const updated: InvestigationCase = {
       ...selectedCase,
       notes: [...selectedCase.notes, note],
       timeline: [...selectedCase.timeline, timelineEntry],
@@ -351,7 +296,7 @@ export function InvestigationsPage() {
           <div>
             <h2 className="text-xl font-medium text-white">Investigations & Cases</h2>
             <p className="text-sm text-gray-400 mt-1">
-              Group alerts into tracked investigations with timeline and notes
+              Full alert history, related logs, IP timeline, and analyst notes per case
             </p>
           </div>
           <div className="flex items-center gap-3">
@@ -497,7 +442,11 @@ export function InvestigationsPage() {
                   return (
                     <div
                       key={c.id}
-                      onClick={() => { setSelectedCase(c); setActiveTab('timeline'); }}
+                      onClick={() => {
+                        setSelectedCase(c);
+                        setActiveTab('overview');
+                        setExpandedAlertId(null);
+                      }}
                       className={`bg-[#0f0f17] border border-[#1f1f2e] p-4 cursor-pointer transition-all hover:border-[#2f2f3e] ${
                         isSelected ? 'ring-2 ring-[#4f46e5]' : ''
                       }`}
@@ -530,7 +479,7 @@ export function InvestigationsPage() {
                       <div className="flex items-center justify-between mt-2 text-xs text-gray-500">
                         <div className="flex items-center gap-1">
                           <Link2 className="size-3" />
-                          <span>{c.linkedAlerts.length} alerts</span>
+                          <span>{c.alerts.length} alerts</span>
                         </div>
                         <span>{formatRelative(c.updatedAt)}</span>
                       </div>
@@ -611,10 +560,10 @@ export function InvestigationsPage() {
                       </div>
                     </div>
                     <div>
-                      <p className="text-xs text-gray-500 mb-1">Linked Alerts</p>
+                      <p className="text-xs text-gray-500 mb-1">Source IPs</p>
                       <div className="flex items-center gap-1.5">
-                        <Link2 className="size-3.5 text-gray-400" />
-                        <span className="text-sm text-gray-300">{selectedCase.linkedAlerts.length}</span>
+                        <MapPin className="size-3.5 text-gray-400" />
+                        <span className="text-sm text-gray-300">{selectedCase.sourceIps.length || '—'}</span>
                       </div>
                     </div>
                   </div>
@@ -669,12 +618,15 @@ export function InvestigationsPage() {
 
                 {/* Tabs */}
                 <div className="bg-[#0f0f17] border border-[#1f1f2e]">
-                  <div className="flex border-b border-[#1f1f2e]">
+                  <div className="flex border-b border-[#1f1f2e] overflow-x-auto">
                     {(
                       [
+                        { key: 'overview', label: 'Overview', icon: Eye, count: undefined },
+                        { key: 'alerts', label: 'All Alerts', icon: Shield, count: selectedCase.alerts.length },
+                        { key: 'logs', label: 'Related Logs', icon: FileText, count: relatedLogs.length },
+                        { key: 'history', label: 'IP History', icon: History, count: ipHistoryAlerts.length },
                         { key: 'timeline', label: 'Timeline', icon: Activity, count: selectedCase.timeline.length },
-                        { key: 'alerts',   label: 'Linked Alerts', icon: Shield, count: selectedCase.linkedAlerts.length },
-                        { key: 'notes',    label: 'Notes', icon: MessageSquare, count: selectedCase.notes.length },
+                        { key: 'notes', label: 'Notes', icon: MessageSquare, count: selectedCase.notes.length },
                       ] as const
                     ).map(({ key, label, icon: Icon, count }) => (
                       <button
@@ -688,20 +640,348 @@ export function InvestigationsPage() {
                       >
                         <Icon className="size-4" />
                         {label}
-                        <span
-                          className={`text-xs px-1.5 py-0.5 ${
-                            activeTab === key
-                              ? 'bg-[#4f46e5]/30 text-[#a5b4fc]'
-                              : 'bg-[#1a1a24] text-gray-500'
-                          }`}
-                        >
-                          {count}
-                        </span>
+                        {count !== undefined ? (
+                          <span
+                            className={`text-xs px-1.5 py-0.5 ${
+                              activeTab === key
+                                ? 'bg-[#4f46e5]/30 text-[#a5b4fc]'
+                                : 'bg-[#1a1a24] text-gray-500'
+                            }`}
+                          >
+                            {count}
+                          </span>
+                        ) : null}
                       </button>
                     ))}
                   </div>
 
                   <div className="p-5">
+
+                    {/* ── Overview tab ─────────────────────────────────── */}
+                    {activeTab === 'overview' && caseStats && (
+                      <div className="space-y-5">
+                        <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
+                          {[
+                            { label: 'Case alerts', value: caseStats.totalAlerts },
+                            { label: 'Open', value: caseStats.openAlerts },
+                            { label: 'Investigating', value: caseStats.investigating },
+                            { label: 'Confirmed threats', value: caseStats.confirmedThreats },
+                            { label: 'Related logs', value: caseStats.relatedLogs },
+                            { label: 'Unique IPs', value: caseStats.uniqueIps },
+                            { label: 'IP history', value: ipHistoryAlerts.length },
+                          ].map(({ label, value }) => (
+                            <div
+                              key={label}
+                              className="bg-[#1a1a24] border border-[#2a2a3a] px-4 py-3"
+                            >
+                              <p className="text-xs text-gray-500 mb-1">{label}</p>
+                              <p className="text-xl font-semibold text-white">{value}</p>
+                            </div>
+                          ))}
+                        </div>
+
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                          <div className="bg-[#1a1a24] border border-[#2a2a3a] p-4">
+                            <p className="text-xs text-gray-500 uppercase tracking-wider mb-2">
+                              Rule & scope
+                            </p>
+                            <p className="text-sm text-white font-medium">{selectedCase.ruleName}</p>
+                            <p className="text-xs text-gray-500 font-mono mt-1">{selectedCase.ruleKey}</p>
+                            <p className="text-xs text-gray-400 mt-3">
+                              First seen {formatTs(caseStats.firstSeen)} · Last{' '}
+                              {formatRelative(caseStats.lastSeen)}
+                            </p>
+                          </div>
+                          <div className="bg-[#1a1a24] border border-[#2a2a3a] p-4">
+                            <p className="text-xs text-gray-500 uppercase tracking-wider mb-2">
+                              Source IPs
+                            </p>
+                            {selectedCase.sourceIps.length === 0 ? (
+                              <p className="text-sm text-gray-500">No IP recorded</p>
+                            ) : (
+                              <ul className="space-y-1">
+                                {selectedCase.sourceIps.map((ip) => (
+                                  <li key={ip} className="text-sm text-gray-300 font-mono">
+                                    {ip}
+                                  </li>
+                                ))}
+                              </ul>
+                            )}
+                          </div>
+                        </div>
+
+                        {recommendations.length > 0 && (
+                          <div className="bg-[#1a1a24] border border-[#2a2a3a] p-4">
+                            <p className="text-xs text-gray-500 uppercase tracking-wider mb-3">
+                              Recommendations (from alerts)
+                            </p>
+                            <ul className="space-y-2">
+                              {recommendations.map((rec) => (
+                                <li
+                                  key={rec}
+                                  className="text-sm text-gray-300 flex gap-2 leading-relaxed"
+                                >
+                                  <span className="text-[#4f46e5]">•</span>
+                                  <span>{rec}</span>
+                                </li>
+                              ))}
+                            </ul>
+                          </div>
+                        )}
+                      </div>
+                    )}
+
+                    {/* ── All alerts tab ───────────────────────────────── */}
+                    {activeTab === 'alerts' && (
+                      <div className="space-y-3">
+                        {selectedCase.alerts.length === 0 ? (
+                          <p className="text-sm text-gray-500 text-center py-8">No alerts in this case.</p>
+                        ) : (
+                          selectedCase.alerts.map((alert) => {
+                            const alertId = getAlertId(alert);
+                            const severity = (readString(alert.severity) ?? 'low').toLowerCase();
+                            const isExpanded = expandedAlertId === alertId;
+                            const ctx =
+                              typeof alert.context === 'object' && alert.context
+                                ? (alert.context as Record<string, unknown>)
+                                : {};
+
+                            return (
+                              <div
+                                key={alertId}
+                                className="border border-[#2a2a3a] bg-[#1a1a24]"
+                              >
+                                <button
+                                  type="button"
+                                  onClick={() =>
+                                    setExpandedAlertId(isExpanded ? null : alertId)
+                                  }
+                                  className="w-full flex items-start justify-between gap-3 px-4 py-3 text-left hover:bg-[#22222f]"
+                                >
+                                  <div className="flex items-start gap-3 min-w-0">
+                                    <div
+                                      className={`size-2 rounded-full mt-1.5 flex-shrink-0 ${
+                                        SEVERITY_DOT[severity] ?? 'bg-gray-500'
+                                      }`}
+                                    />
+                                    <div className="min-w-0">
+                                      <p className="text-sm text-white font-medium">
+                                        {readString(alert.rule_name) ??
+                                          humanizeRule(readString(alert.rule_id))}
+                                      </p>
+                                      <p className="text-xs text-gray-500 font-mono mt-0.5">
+                                        {getAlertIp(alert)} · {formatTs(getAlertTimestamp(alert))}
+                                        {typeof alert.occurrenceCount === 'number' &&
+                                        alert.occurrenceCount > 1
+                                          ? ` · ×${alert.occurrenceCount}`
+                                          : ''}
+                                      </p>
+                                      <p className="text-xs text-gray-400 mt-1 line-clamp-2">
+                                        {readString(alert.message) ?? 'No message'}
+                                      </p>
+                                    </div>
+                                  </div>
+                                  <span
+                                    className={`text-xs font-medium px-2 py-0.5 uppercase flex-shrink-0 ${
+                                      PRIORITY_STYLES[severity as CasePriority]?.badge ??
+                                      'bg-gray-500 text-white'
+                                    }`}
+                                  >
+                                    {severity}
+                                  </span>
+                                </button>
+
+                                {isExpanded && (
+                                  <div className="px-4 pb-4 border-t border-[#2a2a3a] space-y-3">
+                                    <div className="grid grid-cols-2 gap-3 text-xs">
+                                      <div>
+                                        <span className="text-gray-500">Status</span>
+                                        <p className="mt-1">
+                                          <span
+                                            className={`inline-block px-2 py-0.5 text-xs font-medium ${getAlertStatusColor(
+                                              normalizeAlertUiStatus(readString(alert.status)),
+                                            )}`}
+                                          >
+                                            {getAlertStatusLabel(
+                                              normalizeAlertUiStatus(readString(alert.status)),
+                                            )}
+                                          </span>
+                                        </p>
+                                      </div>
+                                      <div>
+                                        <span className="text-gray-500">Alert ID</span>
+                                        <p className="text-gray-300 font-mono mt-0.5 break-all">
+                                          {alertId}
+                                        </p>
+                                      </div>
+                                      {alert.attackerLocation ? (
+                                        <div className="col-span-2">
+                                          <span className="text-gray-500">Location</span>
+                                          <p className="text-gray-300 mt-0.5">
+                                            {alert.attackerLocation}
+                                            {alert.geo?.isp ? ` · ${alert.geo.isp}` : ''}
+                                          </p>
+                                        </div>
+                                      ) : null}
+                                    </div>
+                                    {Object.keys(ctx).length > 0 && (
+                                      <pre className="text-xs text-gray-400 bg-[#0a0a0f] border border-[#2a2a3a] p-3 overflow-x-auto max-h-48">
+                                        {JSON.stringify(ctx, null, 2)}
+                                      </pre>
+                                    )}
+                                    <div className="flex flex-wrap gap-2 pt-1">
+                                      {(
+                                        [
+                                          ['investigating', 'Investigating'],
+                                          ['threat', 'Confirm Threat'],
+                                          ['resolved', 'Resolved'],
+                                          ['false_positive', 'False Positive'],
+                                        ] as const
+                                      ).map(([status, label]) => {
+                                        const uiStatus = normalizeAlertUiStatus(
+                                          readString(alert.status),
+                                        );
+                                        return (
+                                          <button
+                                            key={status}
+                                            type="button"
+                                            disabled={
+                                              updatingAlertId === alertId ||
+                                              uiStatus === status
+                                            }
+                                            onClick={() =>
+                                              void updateAlertDisposition(alertId, status)
+                                            }
+                                            className={`px-2.5 py-1 text-xs border disabled:opacity-40 disabled:cursor-not-allowed ${
+                                              status === 'threat'
+                                                ? 'bg-[#dc2626]/20 text-[#fca5a5] border-[#ef4444]/40 hover:bg-[#dc2626]/30'
+                                                : 'bg-[#1a1a24] text-gray-300 border-[#2a2a3a] hover:text-white'
+                                            }`}
+                                          >
+                                            {label}
+                                          </button>
+                                        );
+                                      })}
+                                    </div>
+                                    <button
+                                      type="button"
+                                      disabled={deepDiveLoading}
+                                      onClick={() => void openAlertDeepDive(alert)}
+                                      className="flex items-center gap-2 text-xs text-[#a5b4fc] hover:text-white disabled:opacity-50"
+                                    >
+                                      <ExternalLink className="size-3.5" />
+                                      Open full alert report
+                                    </button>
+                                  </div>
+                                )}
+                              </div>
+                            );
+                          })
+                        )}
+                      </div>
+                    )}
+
+                    {/* ── Related logs tab ─────────────────────────────── */}
+                    {activeTab === 'logs' && (
+                      <div className="space-y-2">
+                        {relatedLogs.length === 0 ? (
+                          <p className="text-sm text-gray-500 text-center py-8">
+                            No related logs in the last 48h window (matched by source IP or rule type).
+                          </p>
+                        ) : (
+                          <div className="overflow-x-auto border border-[#2a2a3a]">
+                            <table className="w-full text-left text-sm">
+                              <thead className="bg-[#1a1a24] text-xs text-gray-500 uppercase">
+                                <tr>
+                                  <th className="px-3 py-2">Time</th>
+                                  <th className="px-3 py-2">Severity</th>
+                                  <th className="px-3 py-2">Event</th>
+                                  <th className="px-3 py-2">IP</th>
+                                  <th className="px-3 py-2">Source</th>
+                                  <th className="px-3 py-2">Message</th>
+                                </tr>
+                              </thead>
+                              <tbody>
+                                {relatedLogs.map((log) => (
+                                  <tr
+                                    key={
+                                      readString(log._id) ??
+                                      readString(log.event_id) ??
+                                      `${log.timestamp}-${log.event}`
+                                    }
+                                    className="border-t border-[#2a2a3a] hover:bg-[#1a1a24]"
+                                  >
+                                    <td className="px-3 py-2 text-gray-400 whitespace-nowrap">
+                                      {formatTs(log.timestamp)}
+                                    </td>
+                                    <td className="px-3 py-2">
+                                      <span className="text-xs uppercase text-gray-300">
+                                        {readString(log.severity) ?? '—'}
+                                      </span>
+                                    </td>
+                                    <td className="px-3 py-2 font-mono text-xs text-gray-300">
+                                      {readString(log.event) ?? '—'}
+                                    </td>
+                                    <td className="px-3 py-2 font-mono text-xs text-gray-300">
+                                      {readString(log.ip) ?? '—'}
+                                    </td>
+                                    <td className="px-3 py-2 text-gray-400">
+                                      {readString(log.source) ?? '—'}
+                                    </td>
+                                    <td className="px-3 py-2 text-gray-400 max-w-xs truncate">
+                                      {readString(log.message) ?? '—'}
+                                    </td>
+                                  </tr>
+                                ))}
+                              </tbody>
+                            </table>
+                          </div>
+                        )}
+                        <p className="text-xs text-gray-600 text-center">
+                          Showing {relatedLogs.length} log(s) near case timeframe
+                        </p>
+                      </div>
+                    )}
+
+                    {/* ── IP alert history tab ─────────────────────────── */}
+                    {activeTab === 'history' && (
+                      <div className="space-y-2">
+                        {ipHistoryAlerts.length === 0 ? (
+                          <p className="text-sm text-gray-500 text-center py-8">
+                            No other alerts from these IPs outside this case rule group.
+                          </p>
+                        ) : (
+                          ipHistoryAlerts.map((alert) => {
+                            return (
+                              <div
+                                key={getAlertId(alert)}
+                                className="flex items-center justify-between bg-[#1a1a24] border border-[#2a2a3a] px-4 py-3"
+                              >
+                                <div className="flex items-center gap-3 min-w-0">
+                                  <Server className="size-4 text-gray-500 flex-shrink-0" />
+                                  <div className="min-w-0">
+                                    <p className="text-sm text-white truncate">
+                                      {readString(alert.rule_name) ??
+                                        humanizeRule(readString(alert.rule_id))}
+                                    </p>
+                                    <p className="text-xs text-gray-500 font-mono mt-0.5">
+                                      {getAlertIp(alert)} · {formatTs(getAlertTimestamp(alert))}
+                                    </p>
+                                  </div>
+                                </div>
+                                <button
+                                  type="button"
+                                  onClick={() => void openAlertDeepDive(alert)}
+                                  className="text-xs text-[#a5b4fc] hover:text-white flex-shrink-0 ml-2"
+                                >
+                                  View
+                                </button>
+                              </div>
+                            );
+                          })
+                        )}
+                      </div>
+                    )}
 
                     {/* ── Timeline tab ──────────────────────────────────── */}
                     {activeTab === 'timeline' && (
@@ -735,48 +1015,6 @@ export function InvestigationsPage() {
                               </div>
                             </div>
                           ))
-                        )}
-                      </div>
-                    )}
-
-                    {/* ── Linked alerts tab ─────────────────────────────── */}
-                    {activeTab === 'alerts' && (
-                      <div className="space-y-2">
-                        {selectedCase.linkedAlerts.length === 0 ? (
-                          <p className="text-sm text-gray-500 text-center py-8">No linked alerts.</p>
-                        ) : (
-                          selectedCase.linkedAlerts.map((alert) => (
-                            <div
-                              key={alert.id}
-                              className="flex items-center justify-between bg-[#1a1a24] border border-[#2a2a3a] px-4 py-3"
-                            >
-                              <div className="flex items-center gap-3 min-w-0">
-                                <div
-                                  className={`size-2 rounded-full flex-shrink-0 ${
-                                    SEVERITY_DOT[alert.severity] ?? 'bg-gray-500'
-                                  }`}
-                                />
-                                <div className="min-w-0">
-                                  <p className="text-sm text-white truncate">{alert.title}</p>
-                                  <p className="text-xs text-gray-500 font-mono mt-0.5">
-                                    {alert.sourceIp} · {alert.timestamp}
-                                  </p>
-                                </div>
-                              </div>
-                              <span
-                                className={`text-xs font-medium px-2 py-0.5 uppercase flex-shrink-0 ml-3 ${
-                                  PRIORITY_STYLES[alert.severity as CasePriority]?.badge ?? 'bg-gray-500 text-white'
-                                }`}
-                              >
-                                {alert.severity}
-                              </span>
-                            </div>
-                          ))
-                        )}
-                        {selectedCase.linkedAlerts.length > 0 && (
-                          <p className="text-xs text-gray-600 text-center pt-1">
-                            Showing top {selectedCase.linkedAlerts.length} linked alert(s)
-                          </p>
                         )}
                       </div>
                     )}
@@ -854,6 +1092,14 @@ export function InvestigationsPage() {
           </div>
         </div>
       )}
+      <AlertDeepDiveModal
+        alert={deepDiveAlert}
+        isOpen={deepDiveOpen}
+        onClose={() => {
+          setDeepDiveOpen(false);
+          setDeepDiveAlert(null);
+        }}
+      />
     </div>
   );
 }

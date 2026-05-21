@@ -1,4 +1,4 @@
-import { Bell, User, Activity } from 'lucide-react';
+import { User, Activity } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { SystemStatus } from './SystemStatus';
 import { fetchSystemStatus, type SystemStatusResponse } from '../api/system';
@@ -87,7 +87,6 @@ function useSystemStatus(pollInterval = 30000) {
 }
 
 export function Header({ username, role, onLogout }: HeaderProps) {
-  const [notificationCount] = useState(12);
   const { status, error } = useSystemStatus();
 
   const databaseConnected = status?.database.connected ?? false;
@@ -152,17 +151,6 @@ export function Header({ username, role, onLogout }: HeaderProps) {
 
       {/* RIGHT SECTION */}
       <div className="flex items-center gap-2 ml-auto">
-        
-        {/* Notifications */}
-        <button className="relative p-2 hover:bg-[#1a1a24] transition-colors rounded-md">
-          <Bell className="size-5 text-gray-400" />
-          {notificationCount > 0 && (
-            <span className="absolute top-1 right-1 bg-[#ef4444] text-white text-[10px] font-medium size-4 rounded-full flex items-center justify-center">
-              {notificationCount}
-            </span>
-          )}
-        </button>
-
         {/* User */}
         <button
           type="button"

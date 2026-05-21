@@ -5,6 +5,13 @@ import {
   User, Server, LayoutList, Table2,
 } from 'lucide-react';
 import { fetchAlerts, patchAlertStatus, type BackendAlertRecord } from '../api/dashboard';
+import {
+  type AlertUiStatus,
+  type AnalystAlertStatus,
+  getAlertStatusColor,
+  getAlertStatusLabel,
+  normalizeAlertUiStatus,
+} from '../lib/alertStatus';
 
 // ─── Types ─────────────────────────────────────────────────────────────────
 
@@ -12,7 +19,7 @@ interface AlertItem {
   id: string;
   title: string;
   severity: 'critical' | 'high' | 'medium' | 'low';
-  status: 'open' | 'investigating' | 'resolved' | 'false_positive';
+  status: AlertUiStatus;
   timestamp: string;
   firstTriggeredAt?: string;
   occurrenceCount?: number;
@@ -27,7 +34,7 @@ interface AlertItem {
   resourceType: 'user' | 'server' | 'network' | 'application';
 }
 
-type StatusFilter = 'all' | 'open' | 'investigating' | 'resolved' | 'false_positive';
+type StatusFilter = 'all' | AlertUiStatus;
 type SeverityFilter = 'all' | 'critical' | 'high' | 'medium' | 'low';
 type SortBy = 'newest' | 'oldest' | 'severity';
 type ViewMode = 'list' | 'table';
@@ -53,15 +60,6 @@ const formatGeoLabel = (geo: BackendAlertRecord['geo']): string | undefined => {
   if (parts.length > 0) return parts.join(', ');
   if (geo.source === 'private') return 'Private network';
   return undefined;
-};
-
-const toUiStatus = (status: string): AlertItem['status'] => {
-  const s = status.toLowerCase().trim();
-  if (s === 'new' || s === 'open') return 'open';
-  if (s === 'investigating' || s === 'acknowledged') return 'investigating';
-  if (s === 'resolved' || s === 'closed') return 'resolved';
-  if (s === 'false_positive') return 'false_positive';
-  return 'open';
 };
 
 const deriveResourceType = (title: string, description: string): AlertItem['resourceType'] => {
@@ -102,7 +100,7 @@ const normalizeAlert = (alert: BackendAlertRecord): AlertItem => {
     id: alert._id ?? alert.alert_id ?? `${ruleId}-${alert.trigger_time}`,
     title: ruleName,
     severity: (readString(alert.severity) ?? 'low').toLowerCase() as AlertItem['severity'],
-    status: toUiStatus(readString(alert.status) ?? 'open'),
+    status: normalizeAlertUiStatus(readString(alert.status) ?? 'open'),
     timestamp: new Date(alert.trigger_time ?? alert.triggeredAt ?? Date.now()).toLocaleString(),
     firstTriggeredAt: alert.firstTriggeredAt
       ? new Date(alert.firstTriggeredAt).toLocaleString()
@@ -164,30 +162,15 @@ const getSeverityGlow = (severity: string) => {
   }
 };
 
-const getStatusColor = (status: string) => {
-  switch (status) {
-    case 'open':          return 'bg-[#ef4444]/20 text-[#ef4444]';
-    case 'investigating': return 'bg-[#f59e0b]/20 text-[#f59e0b]';
-    case 'resolved':      return 'bg-[#10b981]/20 text-[#10b981]';
-    case 'false_positive':return 'bg-[#6b7280]/20 text-[#6b7280]';
-    default:              return 'bg-gray-700/20 text-gray-400';
-  }
-};
+const getStatusColor = (status: AlertUiStatus) => getAlertStatusColor(status);
+const getStatusLabel = (status: AlertUiStatus) =>
+  status === 'open' ? 'New' : getAlertStatusLabel(status);
 
-const getStatusLabel = (status: string) => {
-  switch (status) {
-    case 'open':          return 'New';
-    case 'investigating': return 'Investigating';
-    case 'resolved':      return 'Resolved';
-    case 'false_positive':return 'False Positive';
-    default:              return status;
-  }
-};
-
-const getStatusIcon = (status: string) => {
+const getStatusIcon = (status: AlertUiStatus) => {
   switch (status) {
     case 'open':          return <XCircle className="size-4 text-[#ef4444]" />;
     case 'investigating': return <Clock className="size-4 text-[#f59e0b]" />;
+    case 'threat':        return <AlertTriangle className="size-4 text-[#f87171]" />;
     case 'resolved':      return <CheckCircle className="size-4 text-[#10b981]" />;
     default:              return null;
   }
@@ -289,6 +272,7 @@ export function AlertsAndThreatPage() {
     status: {
       open:          alerts.filter((a) => a.status === 'open').length,
       investigating: alerts.filter((a) => a.status === 'investigating').length,
+      threat:        alerts.filter((a) => a.status === 'threat').length,
       resolved:      alerts.filter((a) => a.status === 'resolved').length,
       false_positive:alerts.filter((a) => a.status === 'false_positive').length,
     },
@@ -297,7 +281,7 @@ export function AlertsAndThreatPage() {
   // ─── Status update ────────────────────────────────────────────────────
 
   const updateAlertStatus = async (
-    newStatus: 'investigating' | 'resolved' | 'false_positive',
+    newStatus: AnalystAlertStatus,
   ) => {
     if (!selectedAlert || isUpdating) return;
     setIsUpdating(true);
@@ -491,18 +475,25 @@ export function AlertsAndThreatPage() {
           </div>
 
           {/* Action buttons */}
-          <div className="flex gap-2 pt-4 border-t border-[#1f1f2e]">
+          <div className="flex flex-wrap gap-2 pt-4 border-t border-[#1f1f2e]">
             <button
               onClick={() => updateAlertStatus('investigating')}
               disabled={isUpdating || selectedAlert.status === 'investigating'}
-              className="flex-1 bg-[#4f46e5] hover:bg-[#4338ca] text-white px-4 py-2 text-sm disabled:opacity-50 disabled:cursor-not-allowed"
+              className="flex-1 min-w-[7rem] bg-[#4f46e5] hover:bg-[#4338ca] text-white px-4 py-2 text-sm disabled:opacity-50 disabled:cursor-not-allowed"
             >
               Investigate
             </button>
             <button
+              onClick={() => updateAlertStatus('threat')}
+              disabled={isUpdating || selectedAlert.status === 'threat'}
+              className="flex-1 min-w-[7rem] bg-[#dc2626]/20 hover:bg-[#dc2626]/35 border border-[#ef4444]/50 text-[#fca5a5] px-4 py-2 text-sm disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              Confirm Threat
+            </button>
+            <button
               onClick={() => updateAlertStatus('resolved')}
               disabled={isUpdating || selectedAlert.status === 'resolved'}
-              className="flex-1 bg-[#1a1a24] hover:bg-[#2a2a3a] border border-[#2a2a3a] text-white px-4 py-2 text-sm disabled:opacity-50 disabled:cursor-not-allowed"
+              className="flex-1 min-w-[7rem] bg-[#1a1a24] hover:bg-[#2a2a3a] border border-[#2a2a3a] text-white px-4 py-2 text-sm disabled:opacity-50 disabled:cursor-not-allowed"
             >
               Mark Resolved
             </button>
@@ -585,6 +576,7 @@ export function AlertsAndThreatPage() {
               { key: 'all', label: `All (${alerts.length})` },
               { key: 'open', label: `Open (${counts.status.open})` },
               { key: 'investigating', label: `Investigating (${counts.status.investigating})` },
+              { key: 'threat', label: `Threat (${counts.status.threat})` },
               { key: 'resolved', label: `Resolved (${counts.status.resolved})` },
               { key: 'false_positive', label: `False Positive (${counts.status.false_positive})` },
             ] as const

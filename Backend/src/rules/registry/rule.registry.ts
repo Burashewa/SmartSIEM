@@ -8,6 +8,7 @@ import { distributedBruteForceRule } from '../definitions/authentication/distrib
 import { commandInjectionRule } from '../definitions/web-attacks/command-injection.rule';
 import { sqlInjectionRule } from '../definitions/web-attacks/sql-injection.rule';
 import { xssRule } from '../definitions/web-attacks/xss.rule';
+import { pathTraversalLfiRule } from '../definitions/web-attacks/path-traversal-lfi.rule';
 import { apiRateLimitRule } from '../definitions/api-abuse/api-rate-limit.rule';
 import { unauthorizedEndpointRule } from '../definitions/api-abuse/unauthorized-endpoint.rule';
 import { directoryScanRule } from '../definitions/reconnaissance/directory-scan.rule';
@@ -25,6 +26,7 @@ export const RULE_REGISTRY: DetectionRule[] = [
   distributedBruteForceRule,
   sqlInjectionRule,
   xssRule,
+  pathTraversalLfiRule,
   commandInjectionRule,
   apiRateLimitRule,
   unauthorizedEndpointRule,

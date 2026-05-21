@@ -7,12 +7,9 @@ import { LogManagementPage } from './components/LogManagementPage';
 import { DetectionRulesPage } from './components/DetectionRulesPage';
 // import { ThreatDetectionPage } from './components/ThreatDetectionPage';
 import { AIRecommendationsPage } from './components/AIRecommendationsPage';
-import { AccessControlPage } from './components/AccessControlPage';
 import { ReportsPage } from './components/ReportsPage';
 import { SettingsPage } from './components/SettingsPage';
-import { UserManagementPage } from './components/UserManagementPage';
 import { LoginScreen } from './components/LoginScreen';
-import { AlertRecommendationChatbot } from './components/AlertRecommendationChatbot';
 import { AlertsAndThreatPage } from './components/Alertsandthreatpage';
 import { ThreatIntelligencePage } from './components/Threatintelligencepage ';
 import { InvestigationsPage } from './components/Investigationspage';
@@ -40,9 +37,7 @@ export default function App() {
       'threat-detection': 'security_analyst',
       'detection-rules': 'security_analyst',
       'ai-recommendations': 'security_analyst',
-      'access-control': 'security_analyst',
       reports: 'security_analyst',
-      users: 'security_analyst',
       settings: 'security_analyst',
     }),
     [],
@@ -119,14 +114,10 @@ export default function App() {
         return <InvestigationsPage />; //this page is currently under development, it has no route yet, but we want to reserve it in the sidebar
       case 'ai-recommendations':
         return <AIRecommendationsPage />;
-      case 'access-control':
-        return <AccessControlPage />;
       case 'reports':
         return <ReportsPage />;
       case 'settings':
         return <SettingsPage />;
-      case 'users':
-        return <UserManagementPage />;
       case 'alerts-and-threats':
         return <AlertsAndThreatPage />;
       default:
@@ -153,7 +144,6 @@ export default function App() {
         <main className="flex-1 overflow-auto p-6">
           {renderPage()}
         </main>
-        <AlertRecommendationChatbot />
       </div>
     </div>
   );

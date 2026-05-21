@@ -4,6 +4,7 @@ import { Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { Alert } from '../alerts/alert.schema';
 import { AlertsService } from '../alerts/alerts.service';
 import { AuthJwtPayload } from '../auth/auth.types';
+import { formatAlertStatusLabel } from '../alerts/alert-status';
 import { humanizeRuleId } from '../alerts/alert-rule-labels';
 import { RecommendationsService } from '../recommendations/recommendations.service';
 import { ReportAiEnrichmentService } from './report-ai-enrichment.service';
@@ -80,6 +81,23 @@ export class ReportsService {
     }
 
     return items.sort((a, b) => b.date.localeCompare(a.date));
+  }
+
+  /** Loads report markdown only when the client explicitly passes a report date. */
+  async getReportContextForChat(
+    user: AuthJwtPayload,
+    preferredDate?: string,
+  ): Promise<{ reportDate: string | null; markdown: string | null }> {
+    if (!preferredDate || !DATE_PATTERN.test(preferredDate)) {
+      return { reportDate: null, markdown: null };
+    }
+
+    try {
+      const report = await this.getDailyReport(user, preferredDate);
+      return { reportDate: report.date, markdown: report.markdown };
+    } catch {
+      return { reportDate: null, markdown: null };
+    }
   }
 
   async getDailyReport(
@@ -199,6 +217,26 @@ export class ReportsService {
     }
     lines.push('');
 
+    const byStatus: Record<string, number> = {};
+    for (const a of alerts) {
+      const st = (a.status ?? 'open').toLowerCase();
+      const label = formatAlertStatusLabel(st);
+      byStatus[label] = (byStatus[label] ?? 0) + 1;
+    }
+    lines.push('## Summary by investigation status');
+    lines.push('');
+    for (const [label, n] of Object.entries(byStatus).sort((a, b) => b[1] - a[1])) {
+      lines.push(`- **${label}:** ${n}`);
+    }
+    const confirmedThreats = alerts.filter((a) => (a.status ?? '').toLowerCase() === 'threat').length;
+    if (confirmedThreats > 0) {
+      lines.push('');
+      lines.push(
+        `> **${confirmedThreats}** alert(s) were analyst-confirmed as **real threats** during this period.`,
+      );
+    }
+    lines.push('');
+
     const byRule = new Map<string, Alert[]>();
     for (const a of alerts) {
       const k = a.rule_id ?? 'unknown-rule';
@@ -218,7 +256,10 @@ export class ReportsService {
       const sample = items.slice(0, 5);
       for (const a of sample) {
         const ts = a.triggeredAt instanceof Date ? a.triggeredAt.toISOString() : String(a.triggeredAt);
-        lines.push(`- **${ts}** | ${a.severity ?? '?'} | IP: ${a.ip ?? '—'} | ${a.message ?? ''}`);
+        const statusLabel = formatAlertStatusLabel((a.status ?? 'open').toLowerCase());
+        lines.push(
+          `- **${ts}** | ${a.severity ?? '?'} | ${statusLabel} | IP: ${a.ip ?? '—'} | ${a.message ?? ''}`,
+        );
       }
       if (items.length > sample.length) {
         lines.push(`- _… and ${items.length - sample.length} more (deduped in UI)._`);

@@ -67,6 +67,28 @@ run('Syslog parser parses RFC5424 line', () => {
   assert.equal(logs[0].longitude, -74.006);
 });
 
+run('Generic parser lifts user from raw.rawEvent.context on single log', () => {
+  const parser = new GenericLogParser();
+  const dto: CreateLogDto = {
+    event: 'authentication',
+    action: 'login',
+    status: 'failed',
+    ip: '10.0.0.1',
+    raw: {
+      rawEvent: {
+        context: {
+          body: { email: 'stuffer-victim@example.com', password: 'bad' },
+        },
+      },
+    },
+  };
+
+  const logs = parser.parse(dto);
+  assert.equal(logs.length, 1);
+  assert.equal(logs[0].event, 'login_failed');
+  assert.equal(logs[0].user, 'stuffer-victim@example.com');
+});
+
 run('Generic parser maps structured authentication login failure to login_failed', () => {
   const parser = new GenericLogParser();
   const dto: CreateLogDto = {

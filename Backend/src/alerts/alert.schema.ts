@@ -1,7 +1,12 @@
 import { Prop, Schema, SchemaFactory } from '@nestjs/mongoose';
 import { Document, Schema as MongooseSchema } from 'mongoose';
 
-export type AlertStatus = 'open' | 'investigating' | 'resolved';
+export type AlertStatus =
+  | 'open'
+  | 'investigating'
+  | 'threat'
+  | 'resolved'
+  | 'false_positive';
 
 @Schema({ timestamps: true })
 export class Alert extends Document {
@@ -46,7 +51,7 @@ export class Alert extends Document {
     type: String,
     required: true,
     index: true,
-    enum: ['open', 'investigating', 'resolved'],
+    enum: ['open', 'investigating', 'threat', 'resolved', 'false_positive'],
     default: 'open',
   })
   status!: AlertStatus;

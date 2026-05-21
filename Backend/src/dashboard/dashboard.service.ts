@@ -92,7 +92,10 @@ export class DashboardService {
         ...logFilter,
         timestamp: { $gte: yesterdayStart, $lt: todayStart },
       }),
-      this.alertModel.countDocuments({ ...alertFilter, status: { $ne: 'resolved' } }),
+      this.alertModel.countDocuments({
+        ...alertFilter,
+        status: { $nin: ['resolved', 'false_positive'] },
+      }),
       this.alertModel.countDocuments({
         ...alertFilter,
         triggeredAt: { $gte: todayStart, $lte: now },
@@ -100,7 +103,7 @@ export class DashboardService {
       this.alertModel.countDocuments({
         ...alertFilter,
         severity: 'critical',
-        status: { $ne: 'resolved' },
+        status: { $nin: ['resolved', 'false_positive'] },
       }),
       this.alertModel.countDocuments({
         ...alertFilter,

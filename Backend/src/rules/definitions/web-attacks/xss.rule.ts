@@ -10,7 +10,7 @@ export const xssRule: DetectionRule = {
   id: RULE_ID_XSS,
   name: 'Cross-site scripting attempt',
   description:
-    'Flags WAF/labeled XSS events, and inspects message, endpoint, request JSON bodies, and metadata strings for common XSS patterns (after URL decoding).',
+    'Flags WAF/labeled XSS events, and inspects message, endpoint, request bodies, and metadata for XSS patterns including encoded tags, event handlers, DOM sinks, and javascript:/data: URIs (multi-pass URL/entity/escape decoding).',
   severity: 'high',
   tags: ['web-attack', 'xss'],
   matches: (log) => isExplicitXssEvent(log) || scanLogForXss(log).hits.length > 0,

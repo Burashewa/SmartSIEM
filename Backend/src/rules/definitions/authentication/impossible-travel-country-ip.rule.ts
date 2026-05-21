@@ -9,6 +9,7 @@ import {
   IMPOSSIBLE_TRAVEL_COUNTRY_IP_WINDOW_MINUTES,
   RULE_ID_IMPOSSIBLE_TRAVEL_COUNTRY_IP,
 } from '../../rules.constants';
+import { extractLoginIdentity, userMatchFilter } from './auth-log-identity';
 
 export const impossibleTravelCountryIpRule: DetectionRule = {
   id: RULE_ID_IMPOSSIBLE_TRAVEL_COUNTRY_IP,
@@ -17,9 +18,9 @@ export const impossibleTravelCountryIpRule: DetectionRule = {
     'Detects the same user sending logs from a different country (IP geolocation) than a recent log within a short window — any event with user + client IP, not only authentication.',
   severity: 'high',
   tags: ['authentication', 'geo', 'ip', 'session'],
-  matches: (log) => Boolean(log.ip?.trim()) && Boolean(log.user?.trim()),
+  matches: (log) => Boolean(log.ip?.trim()) && Boolean(extractLoginIdentity(log)),
   async evaluate(log, context): Promise<void> {
-    const identity = extractUserIdentity(log);
+    const identity = extractLoginIdentity(log);
     if (!identity || !log.ip?.trim()) return;
 
     const currentGeo = await context.resolveIpCountry(log.ip);
@@ -124,79 +125,3 @@ function countriesEqual(a: ResolvedIpCountry, b: ResolvedIpCountry): boolean {
   return false;
 }
 
-/** Prefer normalized email from payload; fall back to `log.user`. */
-function extractUserIdentity(log: Log): string | undefined {
-  const fromRaw = extractEmailFromRaw(log);
-  if (fromRaw) return fromRaw;
-  const u = log.user?.trim().toLowerCase();
-  return u || undefined;
-}
-
-function extractEmailFromRaw(log: Log): string | undefined {
-  const u = log.user?.trim();
-  if (u && u.includes('@')) return u.toLowerCase();
-
-  const raw = readRecord(log.raw);
-  const fromCtx = (ctx: Record<string, unknown> | undefined) => readEmailFromContext(ctx);
-
-  const pe = raw?.rawEvent;
-  if (isRecord(pe)) {
-    const e = fromCtx(readRecord(pe.context));
-    if (e) return e;
-  }
-
-  const events = Array.isArray(raw?.events) ? raw.events : [];
-  for (const ev of events) {
-    if (!isRecord(ev)) continue;
-    const e = fromCtx(readRecord(ev.context));
-    if (e) return e;
-  }
-
-  return undefined;
-}
-
-function readEmailFromContext(ctx: Record<string, unknown> | undefined): string | undefined {
-  if (!ctx) return undefined;
-  const direct = normalizeEmail(ctx.email);
-  if (direct) return direct;
-  const body = readRecord(ctx.body);
-  if (body) {
-    const nested = normalizeEmail(body.email);
-    if (nested) return nested;
-  }
-  return undefined;
-}
-
-function normalizeEmail(value: unknown): string | undefined {
-  if (typeof value !== 'string') return undefined;
-  const t = value.trim().toLowerCase();
-  if (!t.includes('@')) return undefined;
-  return t;
-}
-
-function userMatchFilter(identity: string): Record<string, unknown> {
-  const pattern = `^${escapeRegex(identity)}$`;
-  const rx = { $regex: pattern, $options: 'i' };
-  return {
-    $or: [
-      { user: rx },
-      { 'raw.rawEvent.context.email': rx },
-      { 'raw.rawEvent.context.body.email': rx },
-      { 'raw.events.context.email': rx },
-      { 'raw.events.context.body.email': rx },
-    ],
-  };
-}
-
-function escapeRegex(s: string): string {
-  return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-}
-
-function readRecord(value: unknown): Record<string, unknown> | undefined {
-  if (!value || typeof value !== 'object' || Array.isArray(value)) return undefined;
-  return value as Record<string, unknown>;
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return Boolean(value && typeof value === 'object' && !Array.isArray(value));
-}

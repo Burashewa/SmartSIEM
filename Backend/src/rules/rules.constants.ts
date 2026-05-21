@@ -8,6 +8,7 @@ export const RULE_ID_DISTRIBUTED_BRUTE_FORCE = 'distributed-brute-force';
 export const RULE_ID_SQL_INJECTION = 'sql-injection-attempt';
 export const RULE_ID_XSS = 'xss-attempt';
 export const RULE_ID_COMMAND_INJECTION = 'command-injection-attempt';
+export const RULE_ID_PATH_TRAVERSAL_LFI = 'path-traversal-lfi-attempt';
 export const RULE_ID_API_RATE_LIMIT = 'api-rate-limit';
 export const RULE_ID_UNAUTHORIZED_ENDPOINT = 'unauthorized-endpoint';
 export const RULE_ID_DIRECTORY_SCAN = 'directory-scan';
@@ -79,6 +80,16 @@ export const COMMAND_INJECTION_EVENT_NAMES = [
   'command_injection',
   'command_injection_attempt',
   'command_injection_detected',
+];
+
+export const PATH_TRAVERSAL_LFI_EVENT_NAMES = [
+  'path_traversal',
+  'path_traversal_attempt',
+  'path_traversal_detected',
+  'lfi',
+  'lfi_attempt',
+  'local_file_inclusion',
+  'local_file_inclusion_attempt',
 ];
 
 export const API_RATE_LIMIT_EVENT_NAMES = [

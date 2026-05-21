@@ -4,11 +4,9 @@ import {
   AlertTriangle, 
   Shield, 
   Settings, 
-  Users, 
   FileBarChart,
   GitBranch,
   Cpu,
-  Lock
 } from 'lucide-react';
 import type { SiemRole } from '../api/auth';
 
@@ -26,11 +24,9 @@ const navItems = [
   // { id: 'threat-detection', label: 'Threat Detection', icon: Shield },
   { id: 'threat-intelligence', label: 'Threat Intelligence', icon: Shield },
   { id: 'detection-rules', label: 'Detection Rules', icon: GitBranch },
-  { id: 'ai-recommendations', label: 'AI Recommendations', icon: Cpu },
+  { id: 'ai-recommendations', label: 'AI Assistant', icon: Cpu },
   { id: 'investigations', label: 'Investigations', icon: FileText },
-  { id: 'access-control', label: 'Access Control', icon: Lock },
   { id: 'reports', label: 'Reports', icon: FileBarChart },
-  { id: 'users', label: 'User Management', icon: Users },
   { id: 'settings', label: 'Settings', icon: Settings },
 ];
 
@@ -44,9 +40,7 @@ export function Sidebar({ currentPage, onNavigate, role }: SidebarProps) {
     'threat-intelligence': 'security_analyst',
     'detection-rules': 'security_analyst',
     'ai-recommendations': 'security_analyst',
-    'access-control': 'security_analyst',
     reports: 'security_analyst',
-    users: 'security_analyst',
     settings: 'security_analyst',
     'alerts-and-threats': 'security_analyst',
   };

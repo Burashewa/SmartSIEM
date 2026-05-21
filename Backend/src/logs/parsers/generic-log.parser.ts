@@ -91,9 +91,16 @@ export class GenericLogParser implements LogParser {
     const status = this.normalizeEvent(this.readString(dto.status));
     const event = deriveRuleFacingEvent(rawEventName, action, status);
 
-    const user = typeof dto.user === 'string' && dto.user.trim() !== '' ? dto.user : undefined;
+    const contextFields = this.readContextIdentityFields(dto);
+    const user =
+      typeof dto.user === 'string' && dto.user.trim() !== ''
+        ? dto.user
+        : contextFields.user;
     const role = typeof dto.role === 'string' && dto.role.trim() !== '' ? dto.role : undefined;
-    const ip = typeof dto.ip === 'string' && dto.ip.trim() !== '' ? dto.ip : undefined;
+    const ip =
+      typeof dto.ip === 'string' && dto.ip.trim() !== ''
+        ? dto.ip
+        : contextFields.ip;
     const deviceId =
       typeof dto.deviceId === 'string' && dto.deviceId.trim() !== '' ? dto.deviceId : undefined;
     const sessionId =
@@ -147,8 +154,14 @@ export class GenericLogParser implements LogParser {
     const status = this.normalizeEvent(this.readString(rawEvent.status));
 
     const context = this.readRecord(rawEvent.context);
+    const contextBody = this.readRecord(context?.body);
     const contextEmail = this.readString(context?.email);
-    const contextUser = this.readString(context?.user);
+    const contextUser =
+      this.readString(context?.user) ??
+      this.readString(context?.username) ??
+      this.readString(contextBody?.email) ??
+      this.readString(contextBody?.username) ??
+      this.readString(contextBody?.user);
     const contextIp = this.readString(context?.clientIp);
     const geo =
       this.extractGeoFromRecord(rawEvent) ?? this.extractGeoFromRecord(dto as Record<string, unknown>);
@@ -179,6 +192,32 @@ export class GenericLogParser implements LogParser {
       ...(geo?.longitude !== undefined ? { longitude: geo.longitude } : {}),
       raw,
     };
+  }
+
+  private readContextIdentityFields(dto: CreateLogDto): { user?: string; ip?: string } {
+    const dtoAny = dto as Record<string, unknown>;
+    const raw = this.readRecord(dtoAny.raw);
+    const payload = this.readRecord(dtoAny.payload);
+
+    for (const container of [raw, payload]) {
+      if (!container) continue;
+      const rawEvent = this.readRecord(container.rawEvent);
+      const context = rawEvent ? this.readRecord(rawEvent.context) : undefined;
+      if (!context) continue;
+
+      const body = this.readRecord(context.body);
+      const user =
+        this.readString(context.email) ??
+        this.readString(context.user) ??
+        this.readString(context.username) ??
+        this.readString(body?.email) ??
+        this.readString(body?.username) ??
+        this.readString(body?.user);
+      const ip = this.readString(context.clientIp);
+      if (user || ip) return { user, ip };
+    }
+
+    return {};
   }
 
   private extractRawEvents(dto: CreateLogDto): Record<string, unknown>[] {

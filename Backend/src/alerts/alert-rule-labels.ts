@@ -12,6 +12,7 @@ const ALERT_RULE_LABELS: Record<string, string> = {
   'sql-injection-attempt': 'SQL injection',
   'xss-attempt': 'XSS',
   'command-injection-attempt': 'command injection',
+  'path-traversal-lfi-attempt': 'path traversal / LFI',
   'api-rate-limit': 'API rate limit',
   'unauthorized-endpoint': 'unauthorized endpoint',
   'directory-scan': 'directory scan',

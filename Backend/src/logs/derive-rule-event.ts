@@ -29,6 +29,9 @@ export function deriveRuleFacingEvent(
     if (a === 'sql' || a === 'sql_injection') return 'sql_injection_attempt';
     if (a === 'xss') return 'xss_attempt';
     if (a === 'command' || a === 'command_injection') return 'command_injection_attempt';
+    if (a === 'path_traversal' || a === 'lfi' || a === 'local_file_inclusion') {
+      return 'path_traversal_attempt';
+    }
   }
 
   if (e === 'reconnaissance' || e === 'recon') {

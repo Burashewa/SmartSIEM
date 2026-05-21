@@ -3,6 +3,7 @@ import { InjectModel } from '@nestjs/mongoose';
 import { Model, Types } from 'mongoose';
 import { AlertsService } from './alerts.service';
 import { Alert } from './alert.schema';
+import { ANALYST_ALERT_STATUSES, isAnalystAlertStatus } from './alert-status';
 import { Roles } from '../auth/decorators/roles.decorator';
 import { AuthJwtPayload } from '../auth/auth.types';
 
@@ -40,11 +41,13 @@ export class AlertsController {
     @Req() request: AuthenticatedRequest,
     @Res() response: any,
   ) {
-    const allowedStatuses = ['investigating', 'resolved', 'false_positive'] as const;
-    const status = body?.status;
+    const status = body?.status?.trim();
 
-    if (!Types.ObjectId.isValid(id) || !status || !allowedStatuses.includes(status as (typeof allowedStatuses)[number])) {
-      return response.status(400).json({ error: 'Invalid status' });
+    if (!Types.ObjectId.isValid(id) || !status || !isAnalystAlertStatus(status)) {
+      return response.status(400).json({
+        error: 'Invalid status',
+        allowed: [...ANALYST_ALERT_STATUSES],
+      });
     }
 
     try {

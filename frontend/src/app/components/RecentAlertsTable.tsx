@@ -3,47 +3,17 @@ import { ChevronRight } from 'lucide-react';
 import { AlertDeepDiveModal } from './AlertDeepDiveModal';
 import { buildRecentAlerts, type RecentAlertRecord } from '../lib/dashboardWidgets';
 import { fetchAlertById } from '../api/dashboard';
+import {
+  getAlertStatusColor,
+  getAlertStatusLabel,
+  normalizeAlertUiStatus,
+} from '../lib/alertStatus';
 
 interface RecentAlertsTableProps {
   alerts: RecentAlertRecord[];
   isLoading?: boolean;
   error?: string | null;
 }
-
-const toUiStatus = (
-  status?: string,
-): 'open' | 'investigating' | 'resolved' | 'false_positive' => {
-  if (!status) {
-    return 'open';
-  }
-
-  const normalized = status.toLowerCase().trim();
-
-  if (normalized === 'new' || normalized === 'open') {
-    return 'open';
-  }
-
-  if (
-    normalized === 'investigating' ||
-    normalized === 'in-progress' ||
-    normalized === 'in_progress'
-  ) {
-    return 'investigating';
-  }
-
-  if (normalized === 'resolved') {
-    return 'resolved';
-  }
-
-  if (
-    normalized === 'false_positive' ||
-    normalized === 'false-positive'
-  ) {
-    return 'false_positive';
-  }
-
-  return 'open';
-};
 
 export function RecentAlertsTable({
   alerts,
@@ -105,32 +75,13 @@ export function RecentAlertsTable({
   };
 
   const getStatusColor = (status?: string) => {
-    const uiStatus = toUiStatus(status);
-
-    switch (uiStatus) {
-      case 'open':
-        return 'bg-[#ef4444]/20 text-[#ef4444] border-[#ef4444]/30';
-
-      case 'investigating':
-        return 'bg-[#f59e0b]/20 text-[#f59e0b] border-[#f59e0b]/30';
-
-      case 'resolved':
-        return 'bg-[#10b981]/20 text-[#10b981] border-[#10b981]/30';
-
-      case 'false_positive':
-        return 'bg-[#7f1d1d]/20 text-[#fca5a5] border-[#7f1d1d]/30';
-
-      default:
-        return 'bg-gray-700/20 text-gray-400 border-gray-700/30';
-    }
+    const uiStatus = normalizeAlertUiStatus(status);
+    return `${getAlertStatusColor(uiStatus)} border`;
   };
 
   const getStatusLabel = (status?: string) => {
-    const normalized = toUiStatus(status);
-    return normalized
-      .split('_')
-      .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
-      .join(' ');
+    const uiStatus = normalizeAlertUiStatus(status);
+    return uiStatus === 'open' ? 'Open' : getAlertStatusLabel(uiStatus);
   };
 
   const formatTimestamp = (timestamp: string) => {

@@ -10,7 +10,7 @@ export const sqlInjectionRule: DetectionRule = {
   id: RULE_ID_SQL_INJECTION,
   name: 'SQL injection attempt',
   description:
-    'Flags WAF/labeled SQL injection events, and inspects request body (e.g. email/password JSON) for common SQLi patterns after URL decoding.',
+    'Flags WAF/labeled SQL injection events, and inspects request bodies, URLs, and messages for SQLi patterns including obfuscated UNION, stacked queries, time/error-based probes, and comment/encoding bypasses (multi-pass URL/HTML/escape decoding).',
   severity: 'critical',
   tags: ['web-attack', 'sql-injection'],
   matches: (log) => isExplicitSqliEvent(log) || scanLogBodyForSqli(log).hits.length > 0,

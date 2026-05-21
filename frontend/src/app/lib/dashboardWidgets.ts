@@ -417,8 +417,9 @@ function normalizeSeverity(value: unknown): WidgetSeverity {
 function normalizeRecentAlertStatus(status: string): string {
   const normalized = status.trim().toLowerCase();
   if (normalized === 'new' || normalized === 'open') return 'open';
-  if (normalized === 'resolved') return 'resolved';
-  if (normalized === 'investigating') return 'investigating';
+  if (normalized === 'resolved' || normalized === 'closed') return 'resolved';
+  if (normalized === 'investigating' || normalized === 'acknowledged') return 'investigating';
+  if (normalized === 'threat' || normalized === 'confirmed_threat') return 'threat';
   if (normalized === 'false_positive') return 'false_positive';
   return normalized || 'open';
 }

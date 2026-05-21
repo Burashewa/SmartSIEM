@@ -122,11 +122,11 @@ export function ReportsPage() {
 
   return (
     <div className="space-y-6">
-      <div>
+        <div>
         <h1 className="text-3xl text-white mb-2">Security Reports</h1>
-        <p className="text-gray-400">
+          <p className="text-gray-400">
           Generate daily alert summaries with AI insights, browse your history, and export as PDF.
-        </p>
+          </p>
       </div>
 
       <div className="grid grid-cols-1 gap-6 lg:grid-cols-[280px_1fr]">
@@ -194,31 +194,31 @@ export function ReportsPage() {
 
         {/* Main panel */}
         <div className="space-y-6">
-          <div className="bg-[#0f0f17] border border-[#1f1f2e] rounded-lg p-6">
-            <div className="flex flex-col gap-4 md:flex-row md:items-start md:justify-between">
-              <div className="flex gap-3">
-                <div className="mt-0.5 flex size-10 shrink-0 items-center justify-center rounded-lg bg-[#4f46e5]/20 border border-[#4f46e5]/30">
-                  <Shield className="size-5 text-[#a5b4fc]" />
-                </div>
-                <div>
-                  <h2 className="text-xl text-white font-medium">Daily security report</h2>
-                  <p className="text-sm text-gray-400 mt-1 max-w-xl">
+      <div className="bg-[#0f0f17] border border-[#1f1f2e] rounded-lg p-6">
+        <div className="flex flex-col gap-4 md:flex-row md:items-start md:justify-between">
+          <div className="flex gap-3">
+            <div className="mt-0.5 flex size-10 shrink-0 items-center justify-center rounded-lg bg-[#4f46e5]/20 border border-[#4f46e5]/30">
+              <Shield className="size-5 text-[#a5b4fc]" />
+            </div>
+            <div>
+              <h2 className="text-xl text-white font-medium">Daily security report</h2>
+              <p className="text-sm text-gray-400 mt-1 max-w-xl">
                     Pulls alerts from the last 24 hours, groups them by rule, adds remediation
                     guidance, and enriches with Gemini AI insights when configured.
-                  </p>
-                </div>
-              </div>
-              <div className="flex flex-wrap gap-2 shrink-0">
-                <button
-                  type="button"
-                  onClick={() => void handleGenerateDailySecurityReport()}
-                  disabled={dailyReportLoading}
-                  className="inline-flex items-center gap-2 px-4 py-2.5 rounded bg-[#4f46e5] hover:bg-[#4338ca] disabled:opacity-50 text-white text-sm font-medium"
-                >
+              </p>
+            </div>
+          </div>
+          <div className="flex flex-wrap gap-2 shrink-0">
+            <button
+              type="button"
+              onClick={() => void handleGenerateDailySecurityReport()}
+              disabled={dailyReportLoading}
+              className="inline-flex items-center gap-2 px-4 py-2.5 rounded bg-[#4f46e5] hover:bg-[#4338ca] disabled:opacity-50 text-white text-sm font-medium"
+            >
                   {dailyReportLoading ? (
                     <Loader2 className="size-4 animate-spin" />
                   ) : (
-                    <FileText className="size-4" />
+              <FileText className="size-4" />
                   )}
                   {dailyReportLoading ? 'Generating…' : 'Generate today\'s report'}
                 </button>
@@ -231,23 +231,23 @@ export function ReportsPage() {
                     >
                       <FileDown className="size-4" />
                       Download PDF
-                    </button>
-                    <button
-                      type="button"
+            </button>
+              <button
+                type="button"
                       onClick={downloadMarkdown}
-                      className="inline-flex items-center gap-2 px-4 py-2.5 rounded bg-[#1a1a24] border border-[#2a2a3a] hover:border-[#4f46e5] text-gray-200 text-sm"
-                    >
-                      <FileDown className="size-4" />
+                className="inline-flex items-center gap-2 px-4 py-2.5 rounded bg-[#1a1a24] border border-[#2a2a3a] hover:border-[#4f46e5] text-gray-200 text-sm"
+              >
+                <FileDown className="size-4" />
                       .md
-                    </button>
+              </button>
                   </>
-                ) : null}
-              </div>
-            </div>
-
-            {dailyReportError ? (
-              <p className="mt-4 text-sm text-[#fca5a5]">{dailyReportError}</p>
             ) : null}
+          </div>
+        </div>
+
+        {dailyReportError ? (
+          <p className="mt-4 text-sm text-[#fca5a5]">{dailyReportError}</p>
+        ) : null}
 
             {viewLoading ? (
               <div className="mt-6 flex items-center gap-2 text-sm text-gray-400">
@@ -270,7 +270,7 @@ export function ReportsPage() {
                       <span className="text-gray-500">Alerts:</span>{' '}
                       <span className="font-mono text-white">{displayAlertCount}</span>
                     </p>
-                  ) : null}
+        ) : null}
                   {displayHasAi ? (
                     <p className="text-[#a5b4fc] flex items-center gap-1">
                       <Sparkles className="size-3.5" />
@@ -279,12 +279,12 @@ export function ReportsPage() {
                   ) : (
                     <p className="text-gray-500">No AI insights on this report</p>
                   )}
-                </div>
-                <div>
+          </div>
+          <div>
                   <h3 className="mb-2 text-sm font-medium text-gray-400">Report preview</h3>
                   <DailyReportMarkdown markdown={displayMarkdown} />
-                </div>
-              </div>
+          </div>
+        </div>
             ) : null}
 
             {!viewLoading && !displayMarkdown && !dailyReportLoading ? (

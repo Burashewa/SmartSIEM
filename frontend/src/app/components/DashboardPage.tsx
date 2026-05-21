@@ -6,7 +6,6 @@ import { EventsBySourceChart } from './EventsBySourceChart';
 import { GeographicMap } from './GeographicMap';
 import { RecentAlertsTable } from './RecentAlertsTable';
 import { TerminalStream } from './TerminalStream';
-import { PriorityAIRecommendations } from './PriorityAIRecommendations';
 import { TrendingUp, AlertTriangle, Shield, Activity } from 'lucide-react';
 import {
   fetchDashboardAlerts,
@@ -26,33 +25,10 @@ import {
   buildRecentAlerts,
   buildStreamEvents,
 } from '../lib/dashboardWidgets';
+import { normalizeAlertUiStatus } from '../lib/alertStatus';
 
 const KPI_POLL_MS = 1000;
 const FULL_REFRESH_MS = 10000;
-
-const toUiStatus = (
-  status?: string,
-): 'open' | 'investigating' | 'resolved' | 'false_positive' => {
-  const normalized = status?.toLowerCase().trim();
-
-  if (normalized === 'new' || normalized === 'open') {
-    return 'open';
-  }
-
-  if (normalized === 'investigating') {
-    return 'investigating';
-  }
-
-  if (normalized === 'resolved') {
-    return 'resolved';
-  }
-
-  if (normalized === 'false_positive') {
-    return 'false_positive';
-  }
-
-  return 'open';
-};
 
 export function DashboardPage() {
   const [summary, setSummary] = useState<DashboardSummaryResponse | null>(null);
@@ -238,7 +214,7 @@ export function DashboardPage() {
 
   const activeAlertsCount = useMemo(() => {
     return alerts.filter(
-      (alert) => toUiStatus(alert.status) === 'open',
+      (alert) => normalizeAlertUiStatus(alert.status) === 'open',
     ).length;
   }, [alerts]);
 
@@ -396,9 +372,6 @@ export function DashboardPage() {
         isLoading={isAlertsLoading}
         error={alertsError}
       />
-
-      {/* AI Recommendations */}
-      <PriorityAIRecommendations />
     </div>
   );
 }

@@ -8,7 +8,12 @@ export interface DashboardMetric {
 }
 
 export type BackendSeverity = 'low' | 'medium' | 'high' | 'critical';
-export type BackendAlertStatus = 'open' | 'investigating' | 'resolved';
+export type BackendAlertStatus =
+  | 'open'
+  | 'investigating'
+  | 'threat'
+  | 'resolved'
+  | 'false_positive';
 
 export interface BackendLogRecord {
   _id?: string;
@@ -181,7 +186,7 @@ export async function fetchAlertById(id: string): Promise<BackendAlertRecord> {
 
 export async function patchAlertStatus(
   id: string,
-  status: 'investigating' | 'resolved' | 'false_positive',
+  status: 'investigating' | 'threat' | 'resolved' | 'false_positive',
 ): Promise<void> {
   const response = await authFetch(`/api/alerts/${encodeURIComponent(id)}/status`, {
     method: 'PATCH',

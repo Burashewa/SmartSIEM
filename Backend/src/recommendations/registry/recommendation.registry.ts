@@ -8,6 +8,7 @@ import { credentialStuffingRecommendation } from '../definitions/credential-stuf
 import { distributedBruteForceRecommendation } from '../definitions/distributed-brute-force.recommendation';
 import { xssRecommendation } from '../definitions/xss.recommendation';
 import { commandInjectionRecommendation } from '../definitions/command-injection.recommendation';
+import { pathTraversalLfiRecommendation } from '../definitions/path-traversal-lfi.recommendation';
 import { unauthorizedEndpointRecommendation } from '../definitions/unauthorized-endpoint.recommendation';
 import { directoryScanRecommendation } from '../definitions/directory-scan.recommendation';
 import { sensitiveFileAccessRecommendation } from '../definitions/sensitive-file-access.recommendation';
@@ -25,6 +26,7 @@ export const RecommendationRegistry: Recommendation[] = [
   distributedBruteForceRecommendation,
   xssRecommendation,
   commandInjectionRecommendation,
+  pathTraversalLfiRecommendation,
   unauthorizedEndpointRecommendation,
   directoryScanRecommendation,
   sensitiveFileAccessRecommendation,

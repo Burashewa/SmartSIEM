@@ -9,7 +9,7 @@
     "start:dev": "nest start --watch",
     "build": "tsc -p tsconfig.json",
     "lint": "echo \"No lint configured\"",
-    "test": "node -r ts-node/register src/logs/parsers/parsers.unit-test.ts"
+    "test": "node -r ts-node/register src/logs/parsers/parsers.unit-test.ts && node -r ts-node/register src/rules/definitions/web-attacks/web-attacks-payload.scan.unit-test.ts && node -r ts-node/register src/rules/definitions/web-attacks/path-traversal-lfi.scan.unit-test.ts && node -r ts-node/register src/rules/definitions/authentication/auth-log-identity.unit-test.ts"
   },
   "dependencies": {
     "@google/genai": "^2.4.0",
