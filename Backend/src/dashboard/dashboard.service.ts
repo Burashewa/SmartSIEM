@@ -237,7 +237,6 @@ export class DashboardService {
       { name: 'High', value: countMap.get('high') ?? 0, color: '#f59e0b' },
       { name: 'Medium', value: countMap.get('medium') ?? 0, color: '#eab308' },
       { name: 'Low', value: countMap.get('low') ?? 0, color: '#3b82f6' },
-      { name: 'Info', value: countMap.get('info') ?? 0, color: '#6b7280' },
     ];
   }
 
