@@ -1,0 +1,55 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Recommendations — Smart SIEM</title>
+    <link rel="stylesheet" href="styles.css" />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500&family=Outfit:wght@400;500;600;700&family=Space+Grotesk:wght@400;500;600;700&display=swap"
+      rel="stylesheet"
+    />
+  </head>
+  <body class="dashboard-body">
+    <div class="bg-orbit" aria-hidden="true"></div>
+    <div class="bg-grid" aria-hidden="true"></div>
+    <div class="bg-noise" aria-hidden="true"></div>
+
+    <header class="topbar">
+      <div class="topbar-inner topbar-inner--dash">
+        <div class="topbar-brand">
+          <span class="topbar-mark" aria-hidden="true"></span>
+          <span class="topbar-title">Smart SIEM</span>
+        </div>
+        <span class="topbar-tag">Recommendations</span>
+      </div>
+    </header>
+
+    <main class="page">
+      <nav class="page-nav">
+        <a href="index.html" class="back-link">← Back to console</a>
+      </nav>
+
+      <header class="hero rec-hero">
+        <div class="badge">Alert</div>
+        <h1 id="recTitle">Recommendations</h1>
+        <p id="recSummary" class="hero-lead">Loading alert…</p>
+        <dl id="recMeta" class="rec-meta" hidden></dl>
+      </header>
+
+      <section class="panel rec-panel">
+        <div class="panel-header">
+          <h2>Guidance</h2>
+          <span class="muted">Action items for this alert</span>
+        </div>
+        <div id="recBody" class="rec-body">
+          <p class="muted">Loading…</p>
+        </div>
+      </section>
+    </main>
+
+    <script src="recommendations.js"></script>
+  </body>
+</html>

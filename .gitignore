@@ -1,8 +1,23 @@
-# Environment & secrets
+# Dependencies
+node_modules/
+/back-end/detection-worker/node_modules
+
+# Environment and secrets
 .env
-.env.local
-.env.*.local
+.env.*
 *.env
+*.local
+!.env.example
+
+# Build output
+build/
+dist/
+dist-ssr/
+downloads/
+
+# TypeScript / Vite caches
+*.tsbuildinfo
+.vite/
 
 # Python
 __pycache__/
@@ -10,10 +25,7 @@ __pycache__/
 *$py.class
 *.so
 .Python
-build/
 develop-eggs/
-dist/
-downloads/
 eggs/
 .eggs/
 lib/
@@ -32,26 +44,32 @@ venv/
 ENV/
 env/
 
-# Output & logs
+# Logs and output
+logs/
 logs.ndjson
 *.ndjson
 *.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+lerna-debug.log*
 
-# Certificates (Aiven Kafka, etc.)
+# Certificates
 back-end/SmartSIEM-Collector/certs/
 
-# IDE & editors
-.idea/
-.vscode/
-*.swp
-*.swo
-*~
-.project
-.pydevproject
-.settings/
+# Generated backend artifacts
+Backend/reports/*.md
+**/src/**/*.js
+**/src/**/*.js.map
 
-# Testing & coverage
+# Test coverage and caches
 test_payload.json
+coverage/
+.nyc_output/
+.cache/
+tmp/
+temp/
 .pytest_cache/
 .coverage
 htmlcov/
@@ -66,4 +84,18 @@ coverage.xml
 .dmypy.json
 dmypy.json
 /back-end/SmartSIEM-Collector/.mypy_cache/
-/back-end/detection-worker/node_modules
+
+# Editor directories and files
+.vscode/*
+!.vscode/extensions.json
+.idea/
+.DS_Store
+*.suo
+*.ntvs*
+*.njsproj
+*.swp
+*.swo
+*~
+.project
+.pydevproject
+.settings/
