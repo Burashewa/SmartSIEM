@@ -29,21 +29,38 @@ interface RegisterResponse {
   };
 }
 
+interface ForgotPasswordResponse {
+  message: string;
+  devResetUrl?: string;
+  emailSent?: boolean;
+}
+
+interface ResetPasswordResponse {
+  ok: boolean;
+  message: string;
+}
+
 const AUTH_STORAGE_KEY = 'smartsiem.auth.tokens';
 
-async function readErrorMessage(response: Response, fallback: string): Promise<string> {
+export async function readErrorMessage(response: Response, fallback: string): Promise<string> {
   try {
     const text = await response.text();
     if (!text) return fallback;
-    const body = JSON.parse(text) as { message?: string | string[] };
+    const body = JSON.parse(text) as {
+      message?: string | string[];
+      error?: string;
+    };
     if (Array.isArray(body.message)) {
-      return body.message.join(' ');
+      return body.message.join('. ');
     }
     if (typeof body.message === 'string' && body.message.trim()) {
       return body.message;
     }
+    if (typeof body.error === 'string' && body.error.trim()) {
+      return body.error;
+    }
   } catch {
-    // ignore
+    // ignore parse errors
   }
   return fallback;
 }
@@ -80,6 +97,17 @@ const writeStoredSession = (value: AuthSession | null): void => {
   window.localStorage.setItem(AUTH_STORAGE_KEY, JSON.stringify(value));
 };
 
+function applyLoginResponse(data: LoginResponse): AuthSession {
+  const next: AuthSession = {
+    accessToken: data.accessToken,
+    refreshToken: data.refreshToken,
+    role: data.role,
+    username: data.username,
+  };
+  setSession(next);
+  return next;
+}
+
 export function getSession(): AuthSession | null {
   if (!session) {
     session = readStoredSession();
@@ -99,41 +127,82 @@ export async function login(username: string, password: string): Promise<AuthSes
     body: JSON.stringify({ username, password }),
   });
   if (!response.ok) {
-    const msg = await readErrorMessage(
-      response,
-      `Login failed (${response.status})`,
-    );
-    throw new Error(msg);
+    throw new Error(await readErrorMessage(response, `Login failed (${response.status})`));
   }
   const data = (await response.json()) as LoginResponse;
-  const next: AuthSession = {
-    accessToken: data.accessToken,
-    refreshToken: data.refreshToken,
-    role: data.role,
-    username: data.username,
-  };
-  setSession(next);
-  return next;
+  return applyLoginResponse(data);
+}
+
+export async function loginWithGoogle(credential: string): Promise<AuthSession> {
+  const response = await fetch('/api/auth/google', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ credential }),
+  });
+  if (!response.ok) {
+    throw new Error(
+      await readErrorMessage(response, `Google sign-in failed (${response.status})`),
+    );
+  }
+  const data = (await response.json()) as LoginResponse;
+  return applyLoginResponse(data);
 }
 
 export async function register(
   username: string,
   password: string,
   role: SiemRole,
+  email?: string,
 ): Promise<RegisterResponse> {
   const response = await fetch('/api/auth/register', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ username, password, role }),
+    body: JSON.stringify({
+      username,
+      password,
+      role,
+      ...(email?.trim() ? { email: email.trim() } : {}),
+    }),
   });
   if (!response.ok) {
-    const msg = await readErrorMessage(
-      response,
-      `Registration failed (${response.status})`,
+    throw new Error(
+      await readErrorMessage(response, `Registration failed (${response.status})`),
     );
-    throw new Error(msg);
   }
   return (await response.json()) as RegisterResponse;
+}
+
+export async function requestPasswordReset(
+  identifier: string,
+): Promise<ForgotPasswordResponse> {
+  const response = await fetch('/api/auth/forgot-password', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ identifier }),
+  });
+  if (!response.ok) {
+    throw new Error(
+      await readErrorMessage(response, `Password reset request failed (${response.status})`),
+    );
+  }
+  return (await response.json()) as ForgotPasswordResponse;
+}
+
+export async function resetPassword(
+  token: string,
+  password: string,
+): Promise<ResetPasswordResponse> {
+  const response = await fetch('/api/auth/reset-password', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ token, password }),
+  });
+  if (!response.ok) {
+    throw new Error(
+      await readErrorMessage(response, `Password reset failed (${response.status})`),
+    );
+  }
+  return (await response.json()) as ResetPasswordResponse;
 }
 
 async function refresh(): Promise<boolean> {

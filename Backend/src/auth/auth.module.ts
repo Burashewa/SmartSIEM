@@ -9,6 +9,7 @@ import { RolesGuard } from './guards/roles.guard';
 import { AuthUser, AuthUserSchema } from './schemas/user.schema';
 import { AuthSession, AuthSessionSchema } from './schemas/session.schema';
 import { AuthEvent, AuthEventSchema } from './schemas/auth-event.schema';
+import { MailService } from '../mail/mail.service';
 
 @Global()
 @Module({
@@ -21,6 +22,7 @@ import { AuthEvent, AuthEventSchema } from './schemas/auth-event.schema';
     ]),
   ],
   providers: [
+    MailService,
     AuthService,
     { provide: APP_GUARD, useClass: JwtAuthGuard },
     { provide: APP_GUARD, useClass: RolesGuard },

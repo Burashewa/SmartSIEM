@@ -13,13 +13,19 @@ export class AuthController {
   @Public()
   @Post('register')
   async register(
-    @Body() body: { username: string; password: string; role: 'security_analyst' | 'admin' },
+    @Body() body: {
+      username: string;
+      password: string;
+      role: 'security_analyst' | 'admin';
+      email?: string;
+    },
     @Req() request: RequestLike,
   ) {
     const user = await this.authService.registerUser({
       username: body.username,
       password: body.password,
       role: body.role,
+      email: body.email,
       sourceIp: request.ip ?? '',
       userAgent: request.headers?.['user-agent'] ?? '',
     });
@@ -33,6 +39,32 @@ export class AuthController {
     @Req() request: RequestLike,
   ) {
     return this.authService.login(body.username, body.password, {
+      sourceIp: request.ip ?? '',
+      userAgent: request.headers?.['user-agent'] ?? '',
+    });
+  }
+
+  @Public()
+  @Post('forgot-password')
+  async forgotPassword(@Body() body: { username?: string; email?: string; identifier?: string }) {
+    const identifier = body.identifier ?? body.username ?? body.email ?? '';
+    return this.authService.requestPasswordReset(identifier);
+  }
+
+  @Public()
+  @Post('reset-password')
+  async resetPassword(@Body() body: { token: string; password: string; newPassword?: string }) {
+    const password = body.newPassword ?? body.password;
+    return this.authService.resetPassword(body.token, password);
+  }
+
+  @Public()
+  @Post('google')
+  async googleLogin(
+    @Body() body: { credential: string },
+    @Req() request: RequestLike,
+  ) {
+    return this.authService.loginWithGoogle(body.credential, {
       sourceIp: request.ip ?? '',
       userAgent: request.headers?.['user-agent'] ?? '',
     });
