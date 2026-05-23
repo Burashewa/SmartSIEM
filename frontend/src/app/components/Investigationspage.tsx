@@ -657,7 +657,7 @@ export function InvestigationsPage() {
 
                   <div className="p-5">
 
-                    {/* ── Overview tab ─────────────────────────────────── */}
+                    {/* ── Overview tab ────────────────────────────── */}
                     {activeTab === 'overview' && caseStats && (
                       <div className="space-y-5">
                         <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
