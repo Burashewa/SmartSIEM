@@ -71,7 +71,7 @@ export function EventsBySourceChart({ data, isLoading = false }: EventsBySourceC
                 color: '#f3f4f6',
                 maxWidth: 360,
               }}
-              formatter={(value: number | undefined) => [
+              formatter={(value) => [
                 Number(value ?? 0).toLocaleString(),
                 'Log events',
               ]}

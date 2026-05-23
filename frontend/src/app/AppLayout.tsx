@@ -13,7 +13,7 @@ interface AppLayoutProps {
 export function AppLayout({ session, onLogout, children }: AppLayoutProps) {
   const location = useLocation();
   const navigate = useNavigate();
-  const currentPage = pathnameToPageId(location.pathname);
+  const currentPage = pathnameToPageId(location.pathname, session.role);
 
   const handleLogout = async () => {
     await onLogout();

@@ -254,13 +254,20 @@ export function clearSession(): void {
   setSession(null);
 }
 
+/** Resolve API path; optional VITE_API_BASE_URL for production builds without Vite proxy. */
+export function apiPath(path: string): string {
+  const base = (import.meta.env.VITE_API_BASE_URL as string | undefined)?.replace(/\/$/, '') ?? '';
+  return `${base}${path.startsWith('/') ? path : `/${path}`}`;
+}
+
 export async function authFetch(input: string, init: RequestInit = {}): Promise<Response> {
+  const url = input.startsWith('/api') ? apiPath(input) : input;
   const current = getSession();
   const headers = new Headers(init.headers ?? {});
   if (current?.accessToken) {
     headers.set('Authorization', `Bearer ${current.accessToken}`);
   }
-  let response = await fetch(input, { ...init, headers });
+  let response = await fetch(url, { ...init, headers });
   if (response.status !== 401) return response;
 
   const refreshed = await ensureFreshSession();
@@ -270,6 +277,6 @@ export async function authFetch(input: string, init: RequestInit = {}): Promise<
   if (!latest?.accessToken) return response;
   const retryHeaders = new Headers(init.headers ?? {});
   retryHeaders.set('Authorization', `Bearer ${latest.accessToken}`);
-  response = await fetch(input, { ...init, headers: retryHeaders });
+  response = await fetch(url, { ...init, headers: retryHeaders });
   return response;
 }

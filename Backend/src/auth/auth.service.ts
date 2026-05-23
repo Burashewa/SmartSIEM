@@ -130,11 +130,16 @@ export class AuthService {
         `Invalid role. Use one of: ${SIEM_ROLES.join(', ')}`,
       );
     }
+    if (input.role === 'admin') {
+      throw new BadRequestException(
+        'Admin accounts can only be created by an existing administrator.',
+      );
+    }
 
     const user = await this.createUser({
       username: input.username,
       password: input.password,
-      role: input.role,
+      role: 'security_analyst',
       email: input.email,
       actor: 'self-register',
       sourceIp: input.sourceIp,
@@ -559,6 +564,272 @@ export class AuthService {
       expiresInSec: this.accessTokenTtlSec,
       role: user.role,
       username: user.username,
+    };
+  }
+
+  async listUsersForAdmin(): Promise<
+    Array<{
+      id: string;
+      username: string;
+      role: SiemRole;
+      isActive: boolean;
+      status: 'active' | 'disabled' | 'locked';
+      failedLoginAttempts: number;
+      lockedUntil?: string;
+      lastLoginAt?: string;
+      createdAt?: string;
+      updatedAt?: string;
+    }>
+  > {
+    const users = await this.authUserModel.find().select('-passwordHash').sort({ username: 1 }).lean();
+    const now = Date.now();
+    return users.map((user) => {
+      const locked =
+        user.lockedUntil instanceof Date ? user.lockedUntil.getTime() > now : false;
+      let status: 'active' | 'disabled' | 'locked' = 'active';
+      if (!user.isActive) status = 'disabled';
+      else if (locked) status = 'locked';
+
+      return {
+        id: String(user._id),
+        username: user.username,
+        role: user.role,
+        isActive: user.isActive,
+        status,
+        failedLoginAttempts: user.failedLoginAttempts ?? 0,
+        lockedUntil: user.lockedUntil?.toISOString(),
+        lastLoginAt: user.lastLoginAt?.toISOString(),
+        createdAt: (user as { createdAt?: Date }).createdAt?.toISOString(),
+        updatedAt: (user as { updatedAt?: Date }).updatedAt?.toISOString(),
+      };
+    });
+  }
+
+  async getUserForAdmin(usernameInput: string): Promise<{
+    id: string;
+    username: string;
+    role: SiemRole;
+    isActive: boolean;
+    status: 'active' | 'disabled' | 'locked';
+    failedLoginAttempts: number;
+    lockedUntil?: string;
+    lastLoginAt?: string;
+    createdAt?: string;
+    updatedAt?: string;
+  }> {
+    const username = usernameInput.trim().toLowerCase();
+    const all = await this.listUsersForAdmin();
+    const found = all.find((u) => u.username === username);
+    if (!found) throw new NotFoundException('User not found');
+    return found;
+  }
+
+  async updateUserAsAdmin(input: {
+    username: string;
+    role?: SiemRole;
+    isActive?: boolean;
+    actor: string;
+    sourceIp?: string;
+    userAgent?: string;
+  }): Promise<{ username: string; role: SiemRole; isActive: boolean }> {
+    const username = input.username.trim().toLowerCase();
+    const user = await this.authUserModel.findOne({ username });
+    if (!user) throw new NotFoundException('User not found');
+
+    if (input.role !== undefined) {
+      if (!SIEM_ROLES.includes(input.role)) {
+        throw new BadRequestException(`Invalid role. Use one of: ${SIEM_ROLES.join(', ')}`);
+      }
+      if (user.role === 'admin' && input.role !== 'admin') {
+        const adminCount = await this.authUserModel.countDocuments({ role: 'admin', isActive: true });
+        if (adminCount <= 1) {
+          throw new BadRequestException('Cannot demote the last active admin');
+        }
+      }
+      user.role = input.role;
+    }
+
+    if (input.isActive !== undefined) {
+      if (user.role === 'admin' && input.isActive === false) {
+        throw new BadRequestException('Admin users cannot be disabled');
+      }
+      user.isActive = input.isActive;
+    }
+
+    await user.save();
+    await this.logEvent({
+      userId: user._id as Types.ObjectId,
+      username: user.username,
+      action: 'auth.user_update',
+      outcome: 'success',
+      sourceIp: input.sourceIp ?? '',
+      userAgent: input.userAgent ?? '',
+      reason: `changed_by:${input.actor}`,
+      metadata: {
+        role: user.role,
+        isActive: user.isActive,
+      },
+    });
+
+    return { username: user.username, role: user.role, isActive: user.isActive };
+  }
+
+  async unlockUserAsAdmin(input: {
+    username: string;
+    actor: string;
+    sourceIp?: string;
+    userAgent?: string;
+  }): Promise<{ username: string; unlocked: boolean }> {
+    const username = input.username.trim().toLowerCase();
+    const user = await this.authUserModel.findOne({ username });
+    if (!user) throw new NotFoundException('User not found');
+
+    user.failedLoginAttempts = 0;
+    user.lockedUntil = undefined;
+    await user.save();
+
+    await this.logEvent({
+      userId: user._id as Types.ObjectId,
+      username: user.username,
+      action: 'auth.user_unlock',
+      outcome: 'success',
+      sourceIp: input.sourceIp ?? '',
+      userAgent: input.userAgent ?? '',
+      reason: `unlocked_by:${input.actor}`,
+    });
+
+    return { username: user.username, unlocked: true };
+  }
+
+  async resetPasswordAsAdmin(input: {
+    username: string;
+    password: string;
+    actor: string;
+    sourceIp?: string;
+    userAgent?: string;
+  }): Promise<{ username: string; passwordReset: boolean }> {
+    const username = input.username.trim().toLowerCase();
+    if (input.password.length < MIN_PASSWORD_LENGTH) {
+      throw new BadRequestException(
+        `Password must be at least ${MIN_PASSWORD_LENGTH} characters`,
+      );
+    }
+
+    const user = await this.authUserModel.findOne({ username });
+    if (!user) throw new NotFoundException('User not found');
+
+    user.passwordHash = this.hashPassword(input.password);
+    user.passwordChangedAt = new Date();
+    user.failedLoginAttempts = 0;
+    user.lockedUntil = undefined;
+    await user.save();
+
+    await this.authSessionModel.updateMany(
+      { userId: user._id, revokedAt: { $exists: false } },
+      { $set: { revokedAt: new Date() } },
+    );
+
+    await this.logEvent({
+      userId: user._id as Types.ObjectId,
+      username: user.username,
+      action: 'auth.password_reset',
+      outcome: 'success',
+      sourceIp: input.sourceIp ?? '',
+      userAgent: input.userAgent ?? '',
+      reason: `reset_by:${input.actor}`,
+    });
+
+    return { username: user.username, passwordReset: true };
+  }
+
+  async listAuditEventsForAdmin(input: {
+    limit?: number;
+    offset?: number;
+    username?: string;
+    action?: string;
+    since?: string;
+    until?: string;
+  }): Promise<{
+    items: Array<{
+      id: string;
+      username: string;
+      action: string;
+      outcome: string;
+      reason: string;
+      sourceIp: string;
+      userAgent: string;
+      metadata?: Record<string, unknown>;
+      createdAt?: string;
+    }>;
+    total: number;
+    limit: number;
+    offset: number;
+  }> {
+    const limit = Math.min(Math.max(input.limit ?? 50, 1), 200);
+    const offset = Math.max(input.offset ?? 0, 0);
+    const filter: Record<string, unknown> = {};
+
+    if (input.username?.trim()) {
+      filter.username = input.username.trim().toLowerCase();
+    }
+    if (input.action?.trim()) {
+      filter.action = input.action.trim();
+    }
+    if (input.since || input.until) {
+      const createdAt: Record<string, Date> = {};
+      if (input.since) {
+        const since = new Date(input.since);
+        if (!Number.isNaN(since.getTime())) createdAt.$gte = since;
+      }
+      if (input.until) {
+        const until = new Date(input.until);
+        if (!Number.isNaN(until.getTime())) createdAt.$lte = until;
+      }
+      if (Object.keys(createdAt).length > 0) filter.createdAt = createdAt;
+    }
+
+    const [items, total] = await Promise.all([
+      this.authEventModel
+        .find(filter)
+        .sort({ createdAt: -1 })
+        .skip(offset)
+        .limit(limit)
+        .lean(),
+      this.authEventModel.countDocuments(filter),
+    ]);
+
+    return {
+      items: items.map((event) => ({
+        id: String(event._id),
+        username: event.username,
+        action: event.action,
+        outcome: event.outcome,
+        reason: event.reason ?? '',
+        sourceIp: event.sourceIp ?? '',
+        userAgent: event.userAgent ?? '',
+        metadata: event.metadata,
+        createdAt: (event as { createdAt?: Date }).createdAt?.toISOString(),
+      })),
+      total,
+      limit,
+      offset,
+    };
+  }
+
+  async countUsersSummary(): Promise<{
+    total: number;
+    active: number;
+    disabled: number;
+    locked: number;
+    admins: number;
+  }> {
+    const users = await this.listUsersForAdmin();
+    return {
+      total: users.length,
+      active: users.filter((u) => u.status === 'active').length,
+      disabled: users.filter((u) => u.status === 'disabled').length,
+      locked: users.filter((u) => u.status === 'locked').length,
+      admins: users.filter((u) => u.role === 'admin').length,
     };
   }
 

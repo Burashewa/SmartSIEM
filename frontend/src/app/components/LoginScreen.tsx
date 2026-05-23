@@ -11,7 +11,6 @@ import {
   Eye,
   EyeOff,
 } from 'lucide-react';
-import type { SiemRole } from '../api/auth';
 import { requestPasswordReset, resetPassword } from '../api/auth';
 import './login-screen.css';
 
@@ -21,7 +20,7 @@ interface LoginScreenProps {
   isLoading: boolean;
   error: string | null;
   onSubmit: (username: string, password: string) => Promise<void>;
-  onRegister: (username: string, password: string, role: SiemRole, email?: string) => Promise<void>;
+  onRegister: (username: string, password: string, email?: string) => Promise<void>;
   onGoogleLogin?: (credential: string) => Promise<void>;
   googleEnabled?: boolean;
 }
@@ -37,7 +36,6 @@ export function LoginScreen({
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
-  const [registerRole, setRegisterRole] = useState<SiemRole>('security_analyst');
   const [resetToken, setResetToken] = useState('');
   const [mode, setMode] = useState<AuthMode>('login');
   const [localError, setLocalError] = useState<string | null>(null);
@@ -125,7 +123,7 @@ export function LoginScreen({
         return;
       }
       try {
-        await onRegister(username, password, registerRole, email.trim() || undefined);
+        await onRegister(username, password, email.trim() || undefined);
         await onSubmit(username, password);
       } catch {
         // parent sets error
@@ -367,21 +365,6 @@ export function LoginScreen({
                     minLength={8}
                   />
                 </div>
-              </div>
-            ) : null}
-
-            {mode === 'register' ? (
-              <div className="auth-field">
-                <label htmlFor="auth-role">Role</label>
-                <select
-                  id="auth-role"
-                  className="auth-input auth-input--plain auth-select"
-                  value={registerRole}
-                  onChange={(e) => setRegisterRole(e.target.value as SiemRole)}
-                >
-                  <option value="security_analyst">Security Analyst</option>
-                  <option value="admin">Admin</option>
-                </select>
               </div>
             ) : null}
 

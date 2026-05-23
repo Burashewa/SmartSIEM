@@ -25,7 +25,7 @@ export function LogActivityChart({ data, isLoading = false }: LogActivityChartPr
   const total = data.reduce((sum, p) => sum + p.logs, 0);
   const hasBuckets = data.length > 0;
 
-  const yDomainMax = (_min: number, max: number) => {
+  const yDomainMax = (max: number) => {
     const m = Number(max);
     if (!Number.isFinite(m) || m <= 0) return 1;
     return Math.ceil(m * 1.08);
@@ -90,7 +90,7 @@ export function LogActivityChart({ data, isLoading = false }: LogActivityChartPr
                 color: '#f3f4f6',
               }}
               labelStyle={{ color: '#9ca3af', marginBottom: 4 }}
-              formatter={(value: number | undefined) => [
+              formatter={(value) => [
                 Number(value ?? 0).toLocaleString(),
                 'Logs in bucket',
               ]}

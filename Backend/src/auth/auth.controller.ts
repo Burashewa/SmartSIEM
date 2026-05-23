@@ -89,7 +89,7 @@ export class AuthController {
     return this.authService.getUserContext(user.sub);
   }
 
-  @Roles('security_analyst')
+  @Roles('admin')
   @Post('users')
   async createUser(
     @Body() body: { username: string; password: string; role: 'security_analyst' | 'admin' },

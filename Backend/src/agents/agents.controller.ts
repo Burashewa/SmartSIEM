@@ -1,12 +1,14 @@
 import { Body, Controller, Get, Param, Post, Req } from '@nestjs/common';
 import { AgentsService } from './agents.service';
 import { AuthJwtPayload } from '../auth/auth.types';
+import { Roles } from '../auth/decorators/roles.decorator';
 
 type AuthenticatedRequest = {
   user?: AuthJwtPayload;
 };
 
 @Controller('agents')
+@Roles('security_analyst')
 export class AgentsController {
   constructor(private readonly agentsService: AgentsService) {}
 
