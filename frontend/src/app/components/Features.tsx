@@ -3,54 +3,54 @@ import { Database, Zap, Shield, Bell, Users, BarChart3 } from "lucide-react";
 const features = [
   {
     icon: Database,
-    title: "Real-time Log Ingestion",
-    description: "Collect and process logs from any source with sub-second latency. Support for all major logging formats and protocols.",
+    title: "Central Security Dashboard",
+    description: "Monitor logs, active alerts, threat KPIs, and system health from a unified SIEM dashboard.",
     color: "text-indigo-400"
   },
   {
     icon: Zap,
-    title: "Stream-based Processing",
-    description: "Built on Apache Kafka for horizontal scalability. Handle millions of events per second with guaranteed delivery.",
+    title: "Log Ingestion & Collector Support",
+    description: "Collect logs from registered agents and ingest them into SmartSIEM for centralized analysis.",
     color: "text-purple-400"
   },
   {
     icon: Shield,
-    title: "Threat Detection Engine",
-    description: "Advanced pattern matching and ML-based detection. Identify brute force attacks, suspicious IPs, and anomalies in real-time.",
+    title: "Detection Rules Management",
+    description: "Enable, disable, and tune detection rules to match your environment and reduce false positives.",
     color: "text-cyan-400"
   },
   {
     icon: Bell,
-    title: "Automated Incident Response",
-    description: "Configure custom actions for detected threats. Automatically block IPs, trigger webhooks, or alert your security team.",
+    title: "Alerts & Threat Triage",
+    description: "Track alert status, investigate incidents, and prioritize threats with built-in triage workflows.",
     color: "text-pink-400"
   },
   {
     icon: Users,
-    title: "Multi-tenant System Monitoring",
-    description: "Isolate and monitor multiple applications or teams. Role-based access control and dedicated security dashboards.",
+    title: "Threat Intelligence Enrichment",
+    description: "Enrich events and alerts with contextual data, IP details, and geographic analysis.",
     color: "text-violet-400"
   },
   {
     icon: BarChart3,
-    title: "Security Alert Dashboard",
-    description: "Beautiful real-time visualizations. Track security metrics, threat trends, and system health at a glance.",
+    title: "AI Reports & Recommendations",
+    description: "Generate daily security reports and AI-assisted recommendations based on alert history.",
     color: "text-emerald-400"
   }
 ];
 
 export function Features() {
   return (
-    <section className="py-24 relative">
+    <section id="features" className="py-24 relative">
       <div className="container mx-auto px-6">
         <div className="text-center mb-16">
           <h2 className="text-4xl md:text-5xl mb-4">
             <span className="bg-gradient-to-r from-white to-gray-400 bg-clip-text text-transparent">
-              Enterprise Security Features
+              SmartSIEM Security Platform
             </span>
           </h2>
           <p className="text-lg text-gray-400 max-w-2xl mx-auto">
-            Everything you need to protect your applications and respond to threats in real-time
+            Visibility across logs, alerts, detection rules, investigations, and AI-powered reports.
           </p>
         </div>
 

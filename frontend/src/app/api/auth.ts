@@ -41,6 +41,8 @@ interface ResetPasswordResponse {
 }
 
 const AUTH_STORAGE_KEY = 'smartsiem.auth.tokens';
+// Client-side maximum session lifetime (ms). After this, require interactive login.
+const MAX_SESSION_MS = 24 * 60 * 60 * 1000; // 24 hours
 
 export async function readErrorMessage(response: Response, fallback: string): Promise<string> {
   try {
@@ -75,8 +77,14 @@ const readStoredSession = (): AuthSession | null => {
   try {
     const raw = window.localStorage.getItem(AUTH_STORAGE_KEY);
     if (!raw) return null;
-    const parsed = JSON.parse(raw) as Partial<AuthSession>;
+    const parsed = JSON.parse(raw) as Partial<AuthSession & { createdAt?: number }>;
     if (!parsed.accessToken || !parsed.refreshToken || !parsed.username || !parsed.role) return null;
+    const createdAt = parsed.createdAt ?? 0;
+    // If the stored session is older than our client-side max lifetime, clear it and require login
+    if (createdAt && Date.now() - createdAt > MAX_SESSION_MS) {
+      window.localStorage.removeItem(AUTH_STORAGE_KEY);
+      return null;
+    }
     return {
       accessToken: parsed.accessToken,
       refreshToken: parsed.refreshToken,
@@ -94,7 +102,17 @@ const writeStoredSession = (value: AuthSession | null): void => {
     window.localStorage.removeItem(AUTH_STORAGE_KEY);
     return;
   }
-  window.localStorage.setItem(AUTH_STORAGE_KEY, JSON.stringify(value));
+  // Preserve original createdAt (initial login time) if present, so refreshes don't extend lifetime
+  try {
+    const existingRaw = window.localStorage.getItem(AUTH_STORAGE_KEY);
+    const existing = existingRaw ? (JSON.parse(existingRaw) as { createdAt?: number }) : null;
+    const createdAt = existing?.createdAt ?? Date.now();
+    const toStore = { ...value, createdAt } as AuthSession & { createdAt: number };
+    window.localStorage.setItem(AUTH_STORAGE_KEY, JSON.stringify(toStore));
+  } catch {
+    const toStore = { ...value, createdAt: Date.now() } as AuthSession & { createdAt: number };
+    window.localStorage.setItem(AUTH_STORAGE_KEY, JSON.stringify(toStore));
+  }
 };
 
 function applyLoginResponse(data: LoginResponse): AuthSession {

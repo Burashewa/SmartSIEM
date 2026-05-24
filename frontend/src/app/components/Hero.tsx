@@ -3,7 +3,7 @@ import { Link } from "react-router-dom";
 
 export function Hero() {
   return (
-    <section className="relative min-h-screen flex items-center justify-center overflow-hidden pt-16">
+    <section id="home" className="relative min-h-screen flex items-center justify-center overflow-hidden pt-16">
       <div className="absolute inset-0 bg-gradient-to-br from-indigo-500/10 via-purple-500/5 to-transparent pointer-events-none" />
       <div className="absolute inset-0 bg-[linear-gradient(to_right,#4f4f4f12_1px,transparent_1px),linear-gradient(to_bottom,#4f4f4f12_1px,transparent_1px)] bg-[size:64px_64px]" />
 
@@ -11,15 +11,15 @@ export function Hero() {
         <div className="max-w-5xl mx-auto text-center">
           <div className="inline-flex items-center gap-2 px-4 py-2 rounded-full bg-purple-500/10 border border-purple-500/20 mb-8 backdrop-blur-sm">
             <Shield className="w-4 h-4 text-purple-400" />
-            <span className="text-sm text-purple-300">Enterprise-Grade Security Platform</span>
+            <span className="text-sm text-purple-300">Smart Security Platform</span>
           </div>
 
           <h1 className="text-6xl md:text-7xl lg:text-8xl mb-6 bg-gradient-to-r from-white via-purple-200 to-indigo-200 bg-clip-text text-transparent">
-            Real-Time SIEM for Modern Applications
+            Real-Time Security for Modern Applications
           </h1>
 
           <p className="text-xl md:text-2xl text-gray-400 mb-12 max-w-3xl mx-auto">
-            Detect threats instantly with a scalable event-driven security platform. Stream logs, analyze patterns, and respond automatically.
+            Detect threats instantly with a scalable event-driven security platform. Stream logs, analyze patterns, and alert automatically.
           </p>
 
           <div className="flex flex-col sm:flex-row gap-4 justify-center items-center">
@@ -39,20 +39,20 @@ export function Hero() {
             </Link>
           </div>
 
-          <div className="mt-20 grid grid-cols-1 md:grid-cols-3 gap-8 text-left">
+          {/* <div className="mt-20 grid grid-cols-1 md:grid-cols-3 gap-8 text-left">
             <div className="p-6 rounded-xl bg-white/5 border border-white/10 backdrop-blur-sm">
               <div className="text-3xl mb-2 text-indigo-400">99.9%</div>
               <div className="text-sm text-gray-400">Uptime Guarantee</div>
             </div>
             <div className="p-6 rounded-xl bg-white/5 border border-white/10 backdrop-blur-sm">
-              <div className="text-3xl mb-2 text-purple-400">&lt;50ms</div>
+              <div className="text-3xl mb-2 text-purple-400">&lt;5s</div>
               <div className="text-sm text-gray-400">Average Detection Time</div>
             </div>
             <div className="p-6 rounded-xl bg-white/5 border border-white/10 backdrop-blur-sm">
-              <div className="text-3xl mb-2 text-cyan-400">10M+</div>
+              <div className="text-3xl mb-2 text-cyan-400">10+</div>
               <div className="text-sm text-gray-400">Events Per Second</div>
             </div>
-          </div>
+          </div> */}
         </div>
       </div>
 

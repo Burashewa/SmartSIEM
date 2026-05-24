@@ -5,20 +5,18 @@ import { useState } from "react";
 export function DeveloperIntegration() {
   const [copied, setCopied] = useState(false);
 
-  const codeSnippet = `POST /ingest
-Authorization: Bearer API_KEY
+  const codeSnippet = `POST /api/logs
+Authorization: Bearer YOUR_AGENT_API_KEY
 Content-Type: application/json
 
 {
-  "event_id": "550e8400-e29b-41d4-a716-446655440000",
   "timestamp": "2026-05-10T15:30:00.000Z",
-  "source": "smartsiem-agent",
+  "source": "my-app",
   "event": "authentication",
   "action": "login",
   "status": "failed",
   "user": "jdoe",
   "ip": "203.0.113.42",
-  "deviceId": "device-abc-001",
   "payload": { "reason": "invalid_credentials" }
 }`;
 
@@ -29,7 +27,7 @@ Content-Type: application/json
   };
 
   return (
-    <section className="py-24 relative">
+    <section id="developer-integration" className="py-24 relative">
       <div className="container mx-auto px-6">
         <div className="max-w-5xl mx-auto">
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-12 items-center">
@@ -46,7 +44,7 @@ Content-Type: application/json
               </h2>
 
               <p className="text-lg text-gray-400 mb-8 leading-relaxed">
-                Get started in minutes with our RESTful API. Send security events from any language, framework, or platform.
+                Send security events to SmartSIEM with a simple REST API and agent API keys — any language or platform.
               </p>
 
               <div className="space-y-4">
@@ -55,8 +53,8 @@ Content-Type: application/json
                     <div className="w-2 h-2 rounded-full bg-indigo-400" />
                   </div>
                   <div>
-                    <h4 className="mb-1">Zero Infrastructure Setup</h4>
-                    <p className="text-sm text-gray-400">No agents, no dependencies. Just HTTP requests.</p>
+                    <h4 className="mb-1">Agent API Keys</h4>
+                    <p className="text-sm text-gray-400">Register collectors in Settings; authenticate with Bearer tokens.</p>
                   </div>
                 </div>
 
@@ -75,8 +73,8 @@ Content-Type: application/json
                     <div className="w-2 h-2 rounded-full bg-cyan-400" />
                   </div>
                   <div>
-                    <h4 className="mb-1">Comprehensive SDKs</h4>
-                    <p className="text-sm text-gray-400">Official libraries for popular languages and frameworks.</p>
+                    <h4 className="mb-1">Built-in Detection</h4>
+                    <p className="text-sm text-gray-400">16 rules run automatically after each ingest.</p>
                   </div>
                 </div>
               </div>
@@ -110,7 +108,7 @@ Content-Type: application/json
                 </div>
                 <pre className="p-6 text-sm overflow-x-auto">
                   <code className="text-gray-300">
-                    <span className="text-pink-400">POST</span> <span className="text-cyan-400">/ingest</span>
+                    <span className="text-pink-400">POST</span> <span className="text-cyan-400">/api/logs</span>
                     {"\n"}
                     <span className="text-purple-400">Authorization:</span> <span className="text-yellow-300">Bearer</span> <span className="text-emerald-400">API_KEY</span>
                     {"\n"}

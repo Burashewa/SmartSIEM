@@ -34,15 +34,15 @@ const docSections = [
   },
   {
     icon: Bell,
-    title: "Alerts & Response System",
-    description: "Automated actions and webhook integrations",
+    title: "Alerts & Triage",
+    description: "Alert lifecycle, investigations, and AI recommendations",
     color: "text-emerald-400"
   }
 ];
 
 export function Documentation() {
   return (
-    <section className="py-24 relative">
+    <section id="docs" className="py-24 relative">
       <div className="absolute inset-0 bg-gradient-to-b from-purple-500/5 via-transparent to-transparent pointer-events-none" />
 
       <div className="container mx-auto px-6 relative z-10">
@@ -87,21 +87,21 @@ export function Documentation() {
               <div>
                 <h3 className="text-2xl mb-4">Quick API Reference</h3>
                 <p className="text-gray-400 mb-6 leading-relaxed">
-                  Send security events to our ingestion endpoint with proper authentication. All requests must include a valid API key.
+                  Ingest logs with an agent API key; use JWT access tokens for dashboard APIs. Base path: <code>/api</code>.
                 </p>
 
                 <div className="space-y-3">
                   <div className="flex items-center gap-3">
                     <div className="px-2 py-1 rounded bg-indigo-500/20 text-indigo-400 text-xs">POST</div>
-                    <code className="text-sm text-purple-300">/logs</code>
+                    <code className="text-sm text-purple-300">/api/logs</code>
                   </div>
                   <div className="flex items-center gap-3">
                     <div className="px-2 py-1 rounded bg-purple-500/20 text-purple-400 text-xs">GET</div>
-                    <code className="text-sm text-purple-300">/alerts</code>
+                    <code className="text-sm text-purple-300">/api/alerts</code>
                   </div>
                   <div className="flex items-center gap-3">
                     <div className="px-2 py-1 rounded bg-cyan-500/20 text-cyan-400 text-xs">GET</div>
-                    <code className="text-sm text-purple-300">/metrics</code>
+                    <code className="text-sm text-purple-300">/api/dashboard/kpi</code>
                   </div>
                 </div>
               </div>
@@ -115,15 +115,15 @@ export function Documentation() {
                     <code className="text-gray-300">
                       <span className="text-purple-400">Authorization:</span> <span className="text-yellow-300">Bearer</span> <span className="text-emerald-400">YOUR_API_KEY</span>
                       {"\n\n"}
-                      <span className="text-pink-400">POST</span> <span className="text-cyan-400">/logs</span>
+                      <span className="text-pink-400">POST</span> <span className="text-cyan-400">/api/logs</span>
                       {"\n\n"}
                       <span className="text-gray-500">{"{"}</span>
                       {"\n  "}
-                      <span className="text-indigo-400">"event"</span>: <span className="text-emerald-400">"string"</span>,
+                      <span className="text-indigo-400">"event"</span>: <span className="text-emerald-400">"authentication"</span>,
                       {"\n  "}
-                      <span className="text-indigo-400">"ip"</span>: <span className="text-emerald-400">"string"</span>,
+                      <span className="text-indigo-400">"status"</span>: <span className="text-emerald-400">"failed"</span>,
                       {"\n  "}
-                      <span className="text-indigo-400">"timestamp"</span>: <span className="text-emerald-400">"ISO-8601"</span>
+                      <span className="text-indigo-400">"ip"</span>: <span className="text-emerald-400">"203.0.113.42"</span>
                       {"\n"}
                       <span className="text-gray-500">{"}"}</span>
                     </code>

@@ -3,39 +3,39 @@ import { Server, Cloud, Activity, AlertTriangle, CheckCircle } from "lucide-reac
 const steps = [
   {
     icon: Server,
-    title: "Client System Sends Logs",
-    description: "Your applications send security events via REST API",
+    title: "Collector Sends Logs",
+    description: "Registered agents post events to the SmartSIEM ingestion API.",
     color: "from-indigo-500 to-purple-500"
   },
   {
     icon: Cloud,
-    title: "Logs Ingested via API",
-    description: "Events are validated and queued for processing",
+    title: "Logs Normalized & Stored",
+    description: "Logs are normalized, enriched, and saved in MongoDB for search and analysis.",
     color: "from-purple-500 to-pink-500"
   },
   {
     icon: Activity,
-    title: "Kafka Streams Events",
-    description: "Real-time stream processing with high throughput",
+    title: "Detection Rules Evaluate",
+    description: "Configured rules analyze incoming logs and flag suspicious activity.",
     color: "from-pink-500 to-cyan-500"
   },
   {
     icon: AlertTriangle,
-    title: "Detection Engine Analyzes",
-    description: "Pattern matching and threat detection algorithms run",
+    title: "Alerts Created",
+    description: "The alert engine generates incidents for security analysts to investigate.",
     color: "from-cyan-500 to-violet-500"
   },
   {
     icon: CheckCircle,
-    title: "Alerts & Automated Actions",
-    description: "Security team notified, malicious IPs blocked automatically",
+    title: "Investigation & Reporting",
+    description: "Analysts review alerts, view investigations, and generate AI-powered reports.",
     color: "from-violet-500 to-emerald-500"
   }
 ];
 
 export function HowItWorks() {
   return (
-    <section className="py-24 relative">
+    <section id="how-it-works" className="py-24 relative">
       <div className="absolute inset-0 bg-gradient-to-b from-transparent via-purple-500/5 to-transparent pointer-events-none" />
 
       <div className="container mx-auto px-6 relative z-10">
@@ -77,9 +77,9 @@ export function HowItWorks() {
               <Activity className="w-5 h-5 text-indigo-400" />
             </div>
             <div>
-              <h4 className="mb-2">Event-Driven Architecture</h4>
+              <h4 className="mb-2">Log Normalization & Rule Evaluation</h4>
               <p className="text-gray-400 leading-relaxed">
-                Built on Apache Kafka for guaranteed delivery and horizontal scalability. Process millions of security events per second with microsecond latency.
+                SmartSIEM normalizes incoming logs, applies detection rules, and stores events in MongoDB so analysts can investigate alerts and generate reports.
               </p>
             </div>
           </div>

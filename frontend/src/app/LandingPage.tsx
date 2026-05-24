@@ -19,9 +19,16 @@ export function LandingPage() {
             SmartSIEM
           </Link>
           <nav className="flex items-center gap-4 text-sm">
-            <Link to={ROUTES.docs} className="text-gray-400 hover:text-white transition-colors">
+            <a href="#features" className="text-gray-400 hover:text-white transition-colors">
+              Features
+            </a>
+            <a href="#how-it-works" className="text-gray-400 hover:text-white transition-colors">
+              How it works
+            </a>
+            
+            <a href="#docs" className="text-gray-400 hover:text-white transition-colors">
               Documentation
-            </Link>
+            </a>
             <Link
               to={ROUTES.login}
               className="px-4 py-2 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white font-medium transition-colors"
@@ -36,7 +43,6 @@ export function LandingPage() {
       <HowItWorks />
       <DeveloperIntegration />
       <Documentation />
-      <CTA />
       <Footer />
     </div>
   );

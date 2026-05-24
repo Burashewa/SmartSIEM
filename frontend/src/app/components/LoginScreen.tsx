@@ -168,23 +168,19 @@ export function LoginScreen({
         <aside className="auth-brand">
           <div>
             <div className="auth-brand__logo">
-              <div className="auth-brand__icon">
+              {/* <div className="auth-brand__icon">
                 <Shield size={28} strokeWidth={1.75} />
-              </div>
-              <div>
+              </div> */}
+              {/* <div>
                 <h1 className="auth-brand__title">SmartSIEM</h1>
                 <p className="auth-brand__tagline">Security operations platform</p>
-              </div>
+              </div> */}
             </div>
-            <p className="auth-brand__lead">
+            {/* <p className="auth-brand__lead">
               Unified visibility for logs, alerts, investigations, and AI-assisted response.
-            </p>
+            </p> */}
           </div>
-          <ul className="auth-brand__list">
-            <li>Real-time detection and alerting</li>
-            <li>Analyst workflows and case management</li>
-            <li>Google sign-in and secure password recovery</li>
-          </ul>
+         
         </aside>
 
         <div className="auth-panel">
