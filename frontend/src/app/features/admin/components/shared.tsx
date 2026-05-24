@@ -1,5 +1,9 @@
 /* eslint-disable react-refresh/only-export-components */
+import { ChevronUp, ChevronDown, ChevronsUpDown } from 'lucide-react';
 import { formatDistanceToNow } from 'date-fns';
+
+export const inputCls =
+  'w-full rounded-md border border-[#1f1f2e] bg-[#0a0a0f] px-3 py-2 text-sm text-white placeholder:text-[#6b7280] focus:border-[#4f46e5] focus:outline-none';
 
 export const cardCls = 'bg-[#0f0f17] border border-[#1f1f2e] rounded-xl';
 export const mutedText = 'text-[#6b7280]';
@@ -81,4 +85,87 @@ export function RoleBadge({ role }: { role: 'admin' | 'security_analyst' }) {
 export function OutcomeBadge({ outcome }: { outcome: 'success' | 'failure' }) {
   const cls = outcome === 'success' ? 'border-green-800 bg-green-900/40 text-green-400' : 'border-red-800 bg-red-900/40 text-red-400';
   return <span className={`inline-flex items-center rounded border px-2 py-0.5 text-xs ${cls}`}>{outcome}</span>;
+}
+
+export type SortDir = 'asc' | 'desc' | null;
+
+export function SortIcon({ dir }: { dir: SortDir }) {
+  if (dir === 'asc') return <ChevronUp className="ml-1 inline h-3 w-3" />;
+  if (dir === 'desc') return <ChevronDown className="ml-1 inline h-3 w-3" />;
+  return <ChevronsUpDown className="ml-1 inline h-3 w-3 opacity-30" />;
+}
+
+export function SortHeader<K extends string>({
+  label,
+  field,
+  sortKey,
+  sortDir,
+  onSort,
+}: {
+  label: string;
+  field: K;
+  sortKey: K | null;
+  sortDir: SortDir;
+  onSort: (field: K) => void;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={() => onSort(field)}
+      className="group inline-flex items-center gap-0.5 font-medium hover:text-white"
+    >
+      {label}
+      <SortIcon dir={sortKey === field ? sortDir : null} />
+    </button>
+  );
+}
+
+export function ActionBtn({
+  onClick,
+  variant = 'default',
+  disabled,
+  children,
+}: {
+  onClick: () => void;
+  variant?: 'default' | 'danger' | 'primary';
+  disabled?: boolean;
+  children: React.ReactNode;
+}) {
+  const cls = {
+    default: 'border-[#1f1f2e] bg-[#0f0f17] text-white hover:bg-[#1a1a24]',
+    danger: 'border-red-800/60 bg-red-900/20 text-red-400 hover:bg-red-900/40',
+    primary: 'border-[#4f46e5]/60 bg-[#4f46e5]/20 text-[#818cf8] hover:bg-[#4f46e5]/30',
+  }[variant];
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      disabled={disabled}
+      className={`rounded-md border px-3 py-1.5 text-xs transition disabled:cursor-not-allowed disabled:opacity-40 ${cls}`}
+    >
+      {children}
+    </button>
+  );
+}
+
+export function SelectNative({
+  value,
+  onChange,
+  children,
+  className,
+}: {
+  value: string;
+  onChange: (value: string) => void;
+  children: React.ReactNode;
+  className?: string;
+}) {
+  return (
+    <select
+      value={value}
+      onChange={(e) => onChange(e.target.value)}
+      className={`rounded-md border border-[#1f1f2e] bg-[#0f0f17] px-3 py-2 text-sm text-white focus:border-[#4f46e5] focus:outline-none ${className ?? ''}`}
+    >
+      {children}
+    </select>
+  );
 }

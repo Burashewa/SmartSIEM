@@ -1,5 +1,9 @@
 import { authFetch } from '../../../api/auth';
 
+export function isAbortError(err: unknown): boolean {
+  return err instanceof Error && (err.name === 'AbortError' || err.message === 'signal is aborted without reason');
+}
+
 export type Role = 'admin' | 'security_analyst';
 export type Outcome = 'success' | 'failure';
 export type UserStatus = 'active' | 'disabled' | 'locked';
@@ -108,15 +112,16 @@ function adminErrorMessage(status: number, detail: string): string {
   return detail;
 }
 
-async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
+async function request<T>(path: string, init: RequestInit = {}, signal?: AbortSignal): Promise<T> {
   const headers = new Headers(init.headers ?? {});
   if (init.body && !headers.has('Content-Type')) {
     headers.set('Content-Type', 'application/json');
   }
   let response: Response;
   try {
-    response = await authFetch(path, { ...init, headers });
-  } catch {
+    response = await authFetch(path, { ...init, headers, signal });
+  } catch (err) {
+    if (isAbortError(err)) throw err;
     throw new Error('Cannot reach backend. Start the NestJS server and reload.');
   }
   if (!response.ok) {
@@ -175,18 +180,24 @@ function normalizeOverview(overview: AdminOverview): AdminOverview {
 }
 
 export const adminApi = {
-  async getOverview(): Promise<AdminOverview> {
-    return normalizeOverview(await request<AdminOverview>('/api/admin/overview'));
+  async getOverview(signal?: AbortSignal): Promise<AdminOverview> {
+    return normalizeOverview(await request<AdminOverview>('/api/admin/overview', {}, signal));
   },
 
-  async getUsers(): Promise<AdminUser[]> {
-    const data = await request<ApiList<Omit<AdminUser, 'isLocked'> & { isLocked?: boolean }>>('/api/admin/users');
+  async getUsers(signal?: AbortSignal): Promise<AdminUser[]> {
+    const data = await request<ApiList<Omit<AdminUser, 'isLocked'> & { isLocked?: boolean }>>(
+      '/api/admin/users',
+      {},
+      signal,
+    );
     return data.items.map(normalizeUser);
   },
 
-  async getUser(username: string): Promise<AdminUser | undefined> {
+  async getUser(username: string, signal?: AbortSignal): Promise<AdminUser | undefined> {
     const data = await request<{ user: Omit<AdminUser, 'isLocked'> & { isLocked?: boolean }; agents: Agent[] }>(
       `/api/admin/users/${encodeURIComponent(username)}`,
+      {},
+      signal,
     );
     return normalizeUser({
       ...data.user,
@@ -235,20 +246,25 @@ export const adminApi = {
     return { ok: true };
   },
 
-  async getAuditLog(params: {
-    limit?: number;
-    offset?: number;
-    username?: string;
-    action?: string;
-    since?: string;
-    until?: string;
-  }): Promise<AuditResponse> {
+  async getAuditLog(
+    params: {
+      limit?: number;
+      offset?: number;
+      username?: string;
+      action?: string;
+      since?: string;
+      until?: string;
+    },
+    signal?: AbortSignal,
+  ): Promise<AuditResponse> {
     const search = new URLSearchParams();
     Object.entries(params).forEach(([key, value]) => {
       if (value !== undefined && value !== '') search.set(key, String(value));
     });
     const data = await request<ApiList<AuditEntry> & { limit: number; offset: number }>(
       `/api/admin/audit?${search.toString()}`,
+      {},
+      signal,
     );
     return {
       entries: data.items.map(normalizeAudit),
@@ -258,8 +274,8 @@ export const adminApi = {
     };
   },
 
-  async getAgents(): Promise<Agent[]> {
-    const data = await request<ApiList<Agent>>('/api/admin/agents');
+  async getAgents(signal?: AbortSignal): Promise<Agent[]> {
+    const data = await request<ApiList<Agent>>('/api/admin/agents', {}, signal);
     return data.items.map(normalizeAgent);
   },
 };
