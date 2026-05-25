@@ -3,6 +3,9 @@
   "version": "0.1.0",
   "description": "Simple SIEM backend in NestJS + MongoDB",
   "private": true,
+  "engines": {
+    "node": ">=20 <25"
+  },
   "scripts": {
     "prestart": "npm run build",
     "start": "node dist/main.js",
