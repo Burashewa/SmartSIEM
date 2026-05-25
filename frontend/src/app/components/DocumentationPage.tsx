@@ -1,5 +1,7 @@
-import { useState } from "react";
-import { Link } from "react-router-dom";
+import { useEffect, useState } from "react";
+import { Link, useSearchParams } from "react-router-dom";
+import { CodeBlock } from "./documentation/CodeBlock";
+import { NodeAgentIntegrationSection } from "./documentation/NodeAgentIntegrationSection";
 import {
   BookOpen,
   Search,
@@ -47,6 +49,24 @@ const sections = [
     subsections: ["REST API", "Batch Events", "Agent Setup"]
   },
   {
+    id: "node-integration",
+    title: "Node.js Integration",
+    icon: Server,
+    subsections: [
+      "Node Overview",
+      "Agent Setup in SmartSIEM",
+      "Environment Variables",
+      "Choose a Snippet Type",
+      "Type A Standalone Script",
+      "Type B Reusable Client",
+      "Type C Express Hook",
+      "Type D Batch Ingest",
+      "Minimum Payload",
+      "Verify Integration",
+      "Security Checklist",
+    ],
+  },
+  {
     id: "log-format",
     title: "Log Format",
     icon: FileText,
@@ -73,9 +93,17 @@ const sections = [
 ];
 
 export function DocumentationPage() {
+  const [searchParams] = useSearchParams();
   const [activeSection, setActiveSection] = useState("introduction");
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [copiedCode, setCopiedCode] = useState<string | null>(null);
+
+  useEffect(() => {
+    const section = searchParams.get("section");
+    if (section && sections.some((s) => s.id === section)) {
+      setActiveSection(section);
+    }
+  }, [searchParams]);
 
   const copyCode = (code: string, id: string) => {
     navigator.clipboard.writeText(code);
@@ -196,6 +224,8 @@ function DocumentationContent({
         return <AuthenticationSection copyCode={copyCode} copiedCode={copiedCode} />;
       case "sending-logs":
         return <SendingLogsSection copyCode={copyCode} copiedCode={copiedCode} />;
+      case "node-integration":
+        return <NodeAgentIntegrationSection copyCode={copyCode} copiedCode={copiedCode} />;
       case "log-format":
         return <LogFormatSection copyCode={copyCode} copiedCode={copiedCode} />;
       case "detection-rules":
@@ -863,15 +893,25 @@ POST /api/agents/:agentId/regenerate`;
         </div>
       </div>
 
-      <div id="rate-limits" className="space-y-4">
+      <div id="agent-setup" className="space-y-4">
         <h2 className="text-3xl">Agent Setup</h2>
         <p className="text-gray-300 leading-relaxed">
           Agents belong to your user account. Create them from Settings in the UI or via the API:
         </p>
         <CodeBlock code={agentSetup} language="bash" id="logs-3" copyCode={copyCode} copiedCode={copiedCode} />
+        <div className="p-5 rounded-lg bg-green-500/10 border border-green-500/20">
+          <p className="text-sm text-gray-300">
+            <strong className="text-green-300">Node.js developers:</strong> see the full step-by-step guide with copy-paste
+            snippets (standalone script, client module, Express hooks, batch ingest) in{" "}
+            <Link to="/docs?section=node-integration" className="text-indigo-400 hover:text-indigo-300 underline">
+              Node.js Integration
+            </Link>
+            .
+          </p>
+        </div>
         <p className="text-sm text-gray-400">
-          Self-hosted SmartSIEM does not enforce cloud-style ingest rate tiers; capacity depends on your MongoDB and
-          host resources.
+          Ingest rate limits are configurable via <code>AGENT_INGEST_MAX_PER_HOUR_PER_AGENT</code> and{" "}
+          <code>AGENT_INGEST_MAX_PER_HOUR_PER_IP</code> in the backend environment.
         </p>
       </div>
     </div>
@@ -1423,44 +1463,3 @@ function ConfigurationSection()  {
   );
 }
 
-
-function CodeBlock({
-  code,
-  language,
-  id,
-  copyCode,
-  copiedCode
-}: {
-  code: string;
-  language: string;
-  id: string;
-  copyCode: (code: string, id: string) => void;
-  copiedCode: string | null;
-}) {
-  return (
-    <div className="relative rounded-xl bg-[#1a1a24] border border-white/10 overflow-hidden">
-      <div className="flex items-center justify-between px-4 py-2 bg-white/5 border-b border-white/10">
-        <span className="text-xs text-gray-400">{language}</span>
-        <button
-          onClick={() => copyCode(code, id)}
-          className="px-3 py-1 rounded bg-white/5 hover:bg-white/10 transition-colors flex items-center gap-2 text-xs"
-        >
-          {copiedCode === id ? (
-            <>
-              <CheckCircle className="w-3 h-3 text-emerald-400" />
-              Copied!
-            </>
-          ) : (
-            <>
-              <Copy className="w-3 h-3" />
-              Copy
-            </>
-          )}
-        </button>
-      </div>
-      <pre className="p-4 text-sm overflow-x-auto">
-        <code className="text-gray-300">{code}</code>
-      </pre>
-    </div>
-  );
-}

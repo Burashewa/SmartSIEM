@@ -45,7 +45,20 @@ Static simulator UI is served from `public/` (excluded from `/api` routes).
 
 | Use case | Method |
 |----------|--------|
-| Log ingestion | `Authorization: Bearer <agent-api-key>` on `POST /api/logs` |
+| Log ingestion | `Authorization: Bearer <agent-api-key>` on `POST /api/logs` (use **HTTPS** in production) |
+
+### Agent ingest security
+
+Configure in `.env`:
+
+| Variable | Purpose |
+|----------|---------|
+| `AGENT_INGEST_REQUIRE_HTTPS` | Reject non-TLS ingest when `true` (set behind reverse proxy with `TRUST_PROXY=true`) |
+| `AGENT_INGEST_ALLOWED_IPS` | Comma-separated global allowlist for ingest (empty = all) |
+| `AGENT_INGEST_MAX_PER_HOUR_PER_AGENT` | Rate limit per agent API key |
+| `AGENT_INGEST_MAX_PER_HOUR_PER_IP` | Rate limit per client IP |
+
+Per-agent `allowedIps` can be set when creating/updating an agent in Settings.
 | Dashboard / analyst APIs | `Authorization: Bearer <jwt-access-token>` from `/api/auth/login` |
 
 Roles: `security_analyst`, `admin`.

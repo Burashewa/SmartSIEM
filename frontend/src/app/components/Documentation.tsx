@@ -1,4 +1,4 @@
-import { BookOpen, Key, FileText, Shield, Bell, ArrowRight, Search } from "lucide-react";
+import { BookOpen, Key, FileText, Shield, Bell, ArrowRight, Search, Server } from "lucide-react";
 import { Link } from "react-router-dom";
 
 const docSections = [
@@ -19,6 +19,13 @@ const docSections = [
     title: "Sending Logs",
     description: "REST API endpoints and request formats",
     color: "text-cyan-400"
+  },
+  {
+    icon: Server,
+    title: "Node.js Agent Integration",
+    description: "Step-by-step agent setup and copy-paste snippets",
+    color: "text-green-400",
+    section: "node-integration",
   },
   {
     icon: BookOpen,
@@ -64,9 +71,14 @@ export function Documentation() {
 
         <div className="max-w-6xl mx-auto grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 mb-12">
           {docSections.map((section, index) => (
-            <div
+            <Link
               key={index}
-              className="group p-6 rounded-xl bg-white/5 border border-white/10 backdrop-blur-sm hover:bg-white/10 hover:border-purple-500/30 transition-all duration-300 cursor-pointer"
+              to={
+                "section" in section && section.section
+                  ? `/docs?section=${section.section}`
+                  : "/docs"
+              }
+              className="group p-6 rounded-xl bg-white/5 border border-white/10 backdrop-blur-sm hover:bg-white/10 hover:border-purple-500/30 transition-all duration-300 cursor-pointer block"
             >
               <div className="flex items-start gap-4">
                 <div className="p-2 rounded-lg bg-white/5 border border-white/10 flex-shrink-0">
@@ -77,7 +89,7 @@ export function Documentation() {
                   <p className="text-sm text-gray-400">{section.description}</p>
                 </div>
               </div>
-            </div>
+            </Link>
           ))}
         </div>
 
