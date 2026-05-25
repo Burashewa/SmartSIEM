@@ -32,8 +32,7 @@ export function EventsBySourceChart({ data, isLoading = false }: EventsBySourceC
       <div className="mb-4">
         <h3 className="text-lg font-medium text-white">Logs by account &amp; agent</h3>
         <p className="text-sm text-gray-400 mt-1">
-          Top combinations of log <span className="text-gray-500">user</span> (email when available)
-          and <span className="text-gray-500">agent display name</span> from your registered collectors
+          Top agent display names from your registered collectors.
         </p>
       </div>
 

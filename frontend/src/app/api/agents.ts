@@ -96,3 +96,17 @@ export async function regenerateAgentApiKey(
 
   return response.json() as Promise<CreatedAgentRecord>;
 }
+
+export async function updateAgent(agentId: string, body: { name?: string }): Promise<AgentRecord> {
+  const response = await authFetch(`/api/agents/${encodeURIComponent(agentId)}`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  });
+
+  if (!response.ok) {
+    throw new Error(await readErrorMessage(response, `Failed to update agent (${response.status})`));
+  }
+
+  return response.json() as Promise<AgentRecord>;
+}

@@ -117,6 +117,39 @@ export class AgentsService {
     };
   }
 
+  async updateAgent(
+    userId: string,
+    agentId: string,
+    input: { name?: string },
+  ): Promise<{
+    agentId: string;
+    name: string;
+    apiKeyStorageMode: AgentApiKeyStorageMode;
+    storedApiKeyAvailable: boolean;
+    apiKeyPreview: string;
+    createdAt?: Date;
+    updatedAt?: Date;
+  }> {
+    const agent = await this.findOwnedAgent(userId, agentId);
+    const name = input.name?.trim();
+    if (!name) {
+      throw new BadRequestException('Agent name is required');
+    }
+
+    agent.name = name;
+    await agent.save();
+
+    return {
+      agentId: agent.agentId,
+      name: agent.name,
+      apiKeyStorageMode: agent.apiKeyStorageMode ?? 'one_time',
+      storedApiKeyAvailable: (agent.apiKeyStorageMode ?? 'one_time') === 'stored',
+      apiKeyPreview: this.buildApiKeyPreview(agent.apiKeyId),
+      createdAt: agent.createdAt,
+      updatedAt: agent.updatedAt,
+    };
+  }
+
   async regenerateApiKey(
     userId: string,
     agentId: string,

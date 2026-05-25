@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { KPICard } from './KPICard';
 import { LogActivityChart } from './LogActivityChart';
 import { AlertsSeverityChart } from './AlertsSeverityChart';
@@ -53,6 +54,7 @@ export function DashboardPage() {
   const [agentNamesById, setAgentNamesById] = useState<Record<string, string>>(
     {},
   );
+  const navigate = useNavigate();
 
   useEffect(() => {
     let isMounted = true;
@@ -251,6 +253,7 @@ export function DashboardPage() {
           icon={TrendingUp}
           iconColor="text-[#4f46e5]"
           borderColor="border-l-[#4f46e5]"
+          onClick={() => navigate('/logs')}
         />
 
         <KPICard
@@ -270,6 +273,7 @@ export function DashboardPage() {
           iconColor="text-[#f59e0b]"
           borderColor="border-l-[#f59e0b]"
           pulsing={activeAlertsCount > 0}
+          onClick={() => navigate('/alerts-and-threats')}
         />
 
         <KPICard

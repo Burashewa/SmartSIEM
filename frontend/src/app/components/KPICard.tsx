@@ -10,6 +10,7 @@ interface KPICardProps {
   iconColor: string;
   borderColor: string;
   pulsing?: boolean;
+  onClick?: () => void;
 }
 
 export function KPICard({
@@ -22,13 +23,19 @@ export function KPICard({
   iconColor,
   borderColor,
   pulsing,
+  onClick,
 }: KPICardProps) {
   const resolvedTrendTone =
     trendTone ??
     (trend.startsWith('+') ? 'positive' : trend.startsWith('-') ? 'negative' : 'neutral');
 
+  const clickableClass = onClick ? 'cursor-pointer hover:bg-[#121226]' : '';
   return (
-    <div className={`bg-[#0f0f17] border border-[#1f1f2e] border-l-4 ${borderColor} p-6 transition-all hover:border-[#2f2f3e] ${pulsing ? 'animate-pulse' : ''}`}>
+    <button
+      type="button"
+      onClick={onClick}
+      className={`w-full text-left bg-[#0f0f17] border border-[#1f1f2e] border-l-4 ${borderColor} p-6 transition-all ${clickableClass} ${pulsing ? 'animate-pulse' : ''}`}
+    >
       <div className="flex items-start justify-between">
         <div className="flex-1">
           <p className="text-sm text-gray-400 mb-1">{title}</p>
@@ -49,6 +56,6 @@ export function KPICard({
           <Icon className="size-6" />
         </div>
       </div>
-    </div>
+    </button>
   );
 }

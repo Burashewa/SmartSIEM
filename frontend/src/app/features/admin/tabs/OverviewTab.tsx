@@ -63,11 +63,13 @@ export default function OverviewTab({
   }
   if (!data) return null;
 
-  const sevData = Object.entries(data.alerts.bySeverity).map(([name, value]) => ({
-    name,
-    value,
-    color: SEV_COLORS[name] ?? '#6b7280',
-  }));
+  const sevData = Object.entries(data.alerts.bySeverity)
+    .filter(([name]) => ['critical', 'high', 'medium', 'low'].includes(name))
+    .map(([name, value]) => ({
+      name,
+      value,
+      color: SEV_COLORS[name] ?? '#6b7280',
+    }));
 
   return (
     <div className="space-y-6">

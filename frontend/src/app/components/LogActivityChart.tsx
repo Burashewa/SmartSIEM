@@ -36,9 +36,9 @@ export function LogActivityChart({ data, isLoading = false }: LogActivityChartPr
       <div className="flex items-center justify-between mb-4 gap-4">
         <div>
           <h3 className="text-lg font-medium text-white">Real-time log activity</h3>
-          <p className="text-sm text-gray-400 mt-1">
+          {/* <p className="text-sm text-gray-400 mt-1">
             Volume from ingested logs (window adapts to your data; bucket size scales automatically)
-          </p>
+          </p> */}
         </div>
         <div className="flex flex-col items-end gap-0.5 shrink-0">
           <div className="flex items-center gap-2">

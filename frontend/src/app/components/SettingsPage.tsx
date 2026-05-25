@@ -23,6 +23,7 @@ import {
   type AgentRecord,
   type CreatedAgentRecord,
 } from '../api/agents';
+import { useSearchParams } from 'react-router-dom';
 
 const STORAGE_OPTIONS: Array<{
   value: AgentApiKeyStorageMode;
@@ -50,6 +51,7 @@ export function SettingsPage() {
   const [newAgentName, setNewAgentName] = useState('');
   const [newAgentStorageMode, setNewAgentStorageMode] =
     useState<AgentApiKeyStorageMode>('one_time');
+  const [searchParams] = useSearchParams();
   const [isCreatingAgent, setIsCreatingAgent] = useState(false);
   const [latestCreatedAgent, setLatestCreatedAgent] = useState<CreatedAgentRecord | null>(null);
   const [showLatestApiKey, setShowLatestApiKey] = useState(true);
@@ -64,6 +66,10 @@ export function SettingsPage() {
   useEffect(() => {
     void loadAgents();
   }, []);
+
+  useEffect(() => {
+    setShowNewAgentForm(searchParams.get('createAgent') === 'true');
+  }, [searchParams]);
 
   async function loadAgents(isManualRefresh = false) {
     if (isManualRefresh) {

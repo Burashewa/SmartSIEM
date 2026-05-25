@@ -10,6 +10,7 @@ import { DetectionRulesPage } from './components/DetectionRulesPage';
 import { AIRecommendationsPage } from './components/AIRecommendationsPage';
 import { ReportsPage } from './components/ReportsPage';
 import { SettingsPage } from './components/SettingsPage';
+import { ProfilePage } from './components/ProfilePage';
 import { LoginScreen } from './components/LoginScreen';
 import { AlertsAndThreatPage } from './components/Alertsandthreatpage';
 import { ThreatIntelligencePage } from './components/Threatintelligencepage ';
@@ -132,6 +133,7 @@ export function AppRoutes() {
       <Route path="/ai-recommendations" element={wrapAnalyst(<AIRecommendationsPage />)} />
       <Route path="/reports" element={wrapAnalyst(<ReportsPage />)} />
       <Route path="/settings" element={wrapAnalyst(<SettingsPage />)} />
+      <Route path="/profile" element={wrapProtected(<ProfilePage />)} />
       <Route path={ROUTES.admin} element={wrapAdmin(<AdminConsolePage />)} />
 
       <Route path="*" element={<Navigate to={ROUTES.landing} replace />} />

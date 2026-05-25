@@ -1,4 +1,4 @@
-import { Body, Controller, Get, Param, Post, Req } from '@nestjs/common';
+import { Body, Controller, Get, Param, Post, Put, Req } from '@nestjs/common';
 import { AgentsService } from './agents.service';
 import { AuthJwtPayload } from '../auth/auth.types';
 import { Roles } from '../auth/decorators/roles.decorator';
@@ -31,6 +31,15 @@ export class AgentsController {
     @Req() request: AuthenticatedRequest,
   ) {
     return this.agentsService.revealApiKey(request.user!.sub, agentId);
+  }
+
+  @Put(':agentId')
+  async updateAgent(
+    @Param('agentId') agentId: string,
+    @Body() body: { name: string },
+    @Req() request: AuthenticatedRequest,
+  ) {
+    return this.agentsService.updateAgent(request.user!.sub, agentId, body);
   }
 
   @Post(':agentId/regenerate')
