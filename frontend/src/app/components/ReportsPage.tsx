@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   Calendar,
   FileDown,
@@ -18,6 +18,7 @@ import {
 } from '../api/reports';
 import { DailyReportMarkdown } from './DailyReportMarkdown';
 import { downloadMarkdownAsPdf } from '../lib/downloadReportPdf';
+import { sanitizeDailyReportMarkdown } from '../lib/reportMarkdown';
 
 function formatReportDate(date: string): string {
   const parsed = new Date(`${date}T12:00:00`);
@@ -99,7 +100,11 @@ export function ReportsPage() {
     }
   };
 
-  const displayMarkdown = activeReport?.markdown ?? dailyReportResult?.markdown ?? null;
+  const rawMarkdown = activeReport?.markdown ?? dailyReportResult?.markdown ?? null;
+  const displayMarkdown = useMemo(
+    () => (rawMarkdown ? sanitizeDailyReportMarkdown(rawMarkdown) : null),
+    [rawMarkdown],
+  );
   const displayDate = activeReport?.date ?? dailyReportResult?.reportDate ?? selectedDate;
   const displayAlertCount = activeReport?.alertCount ?? dailyReportResult?.alertCount ?? null;
   const displayHasAi = activeReport?.hasAiInsights ?? dailyReportResult?.aiInsights !== null;
@@ -202,10 +207,6 @@ export function ReportsPage() {
             </div>
             <div>
               <h2 className="text-xl text-white font-medium">Daily security report</h2>
-              <p className="text-sm text-gray-400 mt-1 max-w-xl">
-                    Pulls alerts from the last 24 hours, groups them by rule, adds remediation
-                    guidance, and enriches with Gemini AI insights when configured.
-              </p>
             </div>
           </div>
           <div className="flex flex-wrap gap-2 shrink-0">

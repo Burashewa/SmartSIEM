@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import {
   AlertTriangle, Clock, CheckCircle, XCircle, Eye,
   Filter, Download, RefreshCw, AlertCircle, Shield,
@@ -197,6 +198,7 @@ export function AlertsAndThreatPage() {
   const [error, setError] = useState<string | null>(null);
   const [isUpdating, setIsUpdating] = useState(false);
   const [viewMode, setViewMode] = useState<ViewMode>('list');
+  const navigate = useNavigate();
   const [statusFilter, setStatusFilter] = useState<StatusFilter>('all');
   const [severityFilter, setSeverityFilter] = useState<SeverityFilter>('all');
   const [sortBy, setSortBy] = useState<SortBy>('newest');
@@ -296,6 +298,9 @@ export function AlertsAndThreatPage() {
 
     try {
       await patchAlertStatus(selectedAlert.id, newStatus);
+      if (newStatus === 'investigating') {
+        navigate(`/investigations?alertId=${encodeURIComponent(selectedAlert.id)}`);
+      }
     } catch (err) {
       console.error('Failed to update alert status:', err);
       setAlerts(previousAlerts);
@@ -360,7 +365,6 @@ export function AlertsAndThreatPage() {
                   </span>
                 )}
             </div>
-            <p className="text-sm text-gray-400 font-mono">{selectedAlert.id}</p>
           </div>
           <span className={`text-xs font-medium px-3 py-1.5 uppercase ${getSeverityColor(selectedAlert.severity)}`}>
             {selectedAlert.severity}
@@ -424,10 +428,6 @@ export function AlertsAndThreatPage() {
               )}
             </div>
             <div>
-              <h4 className="text-sm font-medium text-white mb-1">Target IP</h4>
-              <p className="text-sm text-gray-400 font-mono">{selectedAlert.targetIp}</p>
-            </div>
-            <div>
               <h4 className="text-sm font-medium text-white mb-1">Status</h4>
               <div className="flex items-center gap-2">
                 {getStatusIcon(selectedAlert.status)}
@@ -436,42 +436,6 @@ export function AlertsAndThreatPage() {
                 </span>
               </div>
             </div>
-          </div>
-
-          {/* Affected assets */}
-          <div>
-            <h4 className="text-sm font-medium text-white mb-2">Affected Assets</h4>
-            <div className="flex flex-wrap gap-2">
-              {selectedAlert.affectedAssets.length > 0 ? (
-                selectedAlert.affectedAssets.map((asset) => (
-                  <span
-                    key={asset}
-                    className="bg-[#1a1a24] border border-[#2a2a3a] px-2 py-1 text-xs text-gray-400 font-mono"
-                  >
-                    {asset}
-                  </span>
-                ))
-              ) : (
-                <span className="text-gray-500 text-sm">No affected assets listed.</span>
-              )}
-            </div>
-          </div>
-
-          {/* Recommendations (F3.0 / F4.3) */}
-          <div>
-            <h4 className="text-sm font-medium text-white mb-2">Recommendations</h4>
-            <ul className="space-y-2">
-              {selectedAlert.recommendations.length > 0 ? (
-                selectedAlert.recommendations.map((rec, idx) => (
-                  <li key={idx} className="text-sm text-gray-400 flex items-start gap-2">
-                    <span className="text-[#4f46e5] mt-1">•</span>
-                    {rec}
-                  </li>
-                ))
-              ) : (
-                <li className="text-sm text-gray-400">No recommendations available.</li>
-              )}
-            </ul>
           </div>
 
           {/* Action buttons */}
@@ -858,9 +822,7 @@ export function AlertsAndThreatPage() {
             <div className="border-t border-[#1f1f2e] pt-4">
               <div className="flex items-center gap-2 mb-3">
                 <Filter className="size-4 text-gray-400" />
-                <span className="text-sm text-gray-400">
-                  Alert Details — <span className="text-white font-mono">{selectedAlert.id}</span>
-                </span>
+                <span className="text-sm text-gray-400">Alert Details</span>
               </div>
               <DetailPanel />
             </div>

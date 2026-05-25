@@ -3,7 +3,6 @@ import { useNavigate } from 'react-router-dom';
 import { KPICard } from './KPICard';
 import { LogActivityChart } from './LogActivityChart';
 import { AlertsSeverityChart } from './AlertsSeverityChart';
-import { EventsBySourceChart } from './EventsBySourceChart';
 import { GeographicMap } from './GeographicMap';
 import { RecentAlertsTable } from './RecentAlertsTable';
 import { TerminalStream } from './TerminalStream';
@@ -17,19 +16,18 @@ import {
   type BackendLogRecord,
   type DashboardSummaryResponse,
 } from '../api/dashboard';
-import { fetchAgents } from '../api/agents';
 import {
   buildAttackLocations,
   buildAttackLocationsFromAlerts,
-  buildEventsByUserAndAgent,
   buildLogActivitySeries,
   buildRecentAlerts,
-  buildStreamEvents,
+  buildLiveStreamEvents,
 } from '../lib/dashboardWidgets';
 import { normalizeAlertUiStatus } from '../lib/alertStatus';
 
 const KPI_POLL_MS = 1000;
 const FULL_REFRESH_MS = 10000;
+const STREAM_POLL_MS = 5000;
 
 export function DashboardPage() {
   const [summary, setSummary] = useState<DashboardSummaryResponse | null>(null);
@@ -51,9 +49,6 @@ export function DashboardPage() {
   const [activityError, setActivityError] = useState<string | null>(null);
   const [alertsError, setAlertsError] = useState<string | null>(null);
 
-  const [agentNamesById, setAgentNamesById] = useState<Record<string, string>>(
-    {},
-  );
   const navigate = useNavigate();
 
   useEffect(() => {
@@ -155,29 +150,7 @@ export function DashboardPage() {
       }
     };
 
-    const loadAgents = async () => {
-      try {
-        const agents = await fetchAgents();
-
-        if (!isMounted) return;
-
-        setAgentNamesById(
-          Object.fromEntries(agents.map((a) => [a.agentId, a.name])),
-        );
-      } catch {
-        if (!isMounted) return;
-
-        setAgentNamesById({});
-      }
-    };
-
-    void Promise.all([
-      loadKpi(),
-      loadSummary(),
-      loadLogs(),
-      loadAlerts(),
-      loadAgents(),
-    ]);
+    void Promise.all([loadKpi(), loadSummary(), loadLogs(), loadAlerts()]);
 
     const kpiInterval = window.setInterval(() => {
       void loadKpi();
@@ -187,14 +160,19 @@ export function DashboardPage() {
       void loadSummary();
       void loadLogs();
       void loadAlerts();
-      void loadAgents();
     }, FULL_REFRESH_MS);
+
+    const streamInterval = window.setInterval(() => {
+      void loadLogs();
+      void loadAlerts();
+    }, STREAM_POLL_MS);
 
     return () => {
       isMounted = false;
 
       window.clearInterval(kpiInterval);
       window.clearInterval(fullInterval);
+      window.clearInterval(streamInterval);
     };
   }, []);
 
@@ -203,22 +181,54 @@ export function DashboardPage() {
 
   const kpiLoading = isKpiLoading && !metrics;
 
-  const alertAttackLocations = buildAttackLocationsFromAlerts(alerts);
+  const dashboardAlerts = useMemo(
+    () => alerts.filter(
+      (alert) => normalizeAlertUiStatus(alert.status) !== 'false_positive',
+    ),
+    [alerts],
+  );
+
+  const alertAttackLocations = buildAttackLocationsFromAlerts(dashboardAlerts);
 
   const attackLocations =
     alertAttackLocations.length > 0
       ? alertAttackLocations
       : buildAttackLocations(logs);
 
-  const streamEvents = buildStreamEvents(logs);
+  const streamEvents = useMemo(
+    () => buildLiveStreamEvents(logs, dashboardAlerts, 50),
+    [logs, dashboardAlerts],
+  );
 
-  const recentAlerts = buildRecentAlerts(alerts);
+  const streamError = activityError ?? alertsError;
+  const isStreamLoading = isActivityLoading || isAlertsLoading;
+
+  const recentAlerts = buildRecentAlerts(dashboardAlerts);
 
   const activeAlertsCount = useMemo(() => {
-    return alerts.filter(
-      (alert) => normalizeAlertUiStatus(alert.status) === 'open',
-    ).length;
-  }, [alerts]);
+    return dashboardAlerts.filter((alert) => {
+      const status = normalizeAlertUiStatus(alert.status);
+      return status === 'open' || status === 'investigating' || status === 'threat';
+    }).length;
+  }, [dashboardAlerts]);
+
+  const statusCounts = useMemo(() => {
+    const counts = {
+      open: 0,
+      investigating: 0,
+      threat: 0,
+      resolved: 0,
+    };
+
+    for (const alert of dashboardAlerts) {
+      const status = normalizeAlertUiStatus(alert.status);
+      if (status in counts) {
+        (counts as Record<string, number>)[status] += 1;
+      }
+    }
+
+    return counts;
+  }, [dashboardAlerts]);
 
   const logActivityFromLogs = useMemo(
     () =>
@@ -227,11 +237,6 @@ export function DashboardPage() {
         bucketMinutes: 60,
       }),
     [logs],
-  );
-
-  const logsByAccountAgent = useMemo(
-    () => buildEventsByUserAndAgent(logs, 10, agentNamesById),
-    [logs, agentNamesById],
   );
 
   return (
@@ -262,6 +267,9 @@ export function DashboardPage() {
             isAlertsLoading && alerts.length === 0
               ? '...'
               : activeAlertsCount.toString()
+          }
+          subtext={
+            `Open ${statusCounts.open} · Investigating ${statusCounts.investigating} · Threat ${statusCounts.threat} · Resolved ${statusCounts.resolved}`
           }
           trend={
             metrics?.activeAlerts.trend ??
@@ -343,14 +351,6 @@ export function DashboardPage() {
         </div>
       </div>
 
-      {/* Events by source */}
-      <div className="min-w-0">
-        <EventsBySourceChart
-          data={logsByAccountAgent}
-          isLoading={isActivityLoading}
-        />
-      </div>
-
       {/* Map + terminal */}
       <div className="grid grid-cols-1 xl:grid-cols-2 gap-6">
         <div className="min-w-0">
@@ -364,8 +364,8 @@ export function DashboardPage() {
         <div className="min-w-0">
           <TerminalStream
             events={streamEvents}
-            isLoading={isActivityLoading}
-            error={activityError}
+            isLoading={isStreamLoading}
+            error={streamError}
           />
         </div>
       </div>

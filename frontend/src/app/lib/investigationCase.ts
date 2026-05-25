@@ -71,9 +71,15 @@ export const getAlertIp = (alert: BackendAlertRecord): string => {
 
 export function buildCasesFromAlerts(alerts: BackendAlertRecord[]): InvestigationCase[] {
   const groupMap = new Map<string, BackendAlertRecord[]>();
+  const timeWindowMs = 15 * 60 * 1000; // group alerts from the same IP in the same 15-minute window
 
   for (const alert of alerts) {
-    const key = getAlertRuleKey(alert);
+    const ip = getAlertIp(alert);
+    const timestamp = new Date(getAlertTimestamp(alert)).getTime();
+    const bucket = ip !== 'Unknown' ? Math.floor(timestamp / timeWindowMs) * timeWindowMs : undefined;
+    const key = ip !== 'Unknown'
+      ? `ip|${ip}|${bucket}`
+      : `rule|${getAlertRuleKey(alert)}`;
     const arr = groupMap.get(key) ?? [];
     arr.push(alert);
     groupMap.set(key, arr);
@@ -98,23 +104,29 @@ export function buildCasesFromAlerts(alerts: BackendAlertRecord[]): Investigatio
           ? 'medium'
           : 'low';
 
-    const rawStatus = (readString(first.status) ?? 'open').toLowerCase();
-    const status: CaseStatus =
-      rawStatus === 'investigating'
-        ? 'in_progress'
-        : rawStatus === 'threat'
-          ? 'pending_review'
-          : rawStatus === 'resolved' || rawStatus === 'closed'
-            ? 'closed'
-            : rawStatus === 'false_positive'
-              ? 'closed'
-              : 'open';
+    const statuses = group.map((a) => (readString(a.status) ?? 'open').toLowerCase());
+    const hasInvestigating = statuses.includes('investigating');
+    const hasThreat = statuses.includes('threat');
+    const allClosed = statuses.every((s) => s === 'resolved' || s === 'false_positive' || s === 'closed');
 
-    const ruleName = readString(first.rule_name) ?? humanizeRule(ruleKey);
+    const status: CaseStatus =
+      hasInvestigating
+        ? 'in_progress'
+        : hasThreat
+          ? 'pending_review'
+          : allClosed
+            ? 'closed'
+            : 'open';
+
+    const ruleNames = [
+      ...new Set(group.map((a) => readString(a.rule_name) ?? humanizeRule(getAlertRuleKey(a)))),
+    ];
+    const ruleName = ruleNames.length === 1 ? ruleNames[0] : 'Multiple rules';
     const caseId = `CASE-${String(idx).padStart(4, '0')}`;
     const sourceIps = [
       ...new Set(group.map((a) => getAlertIp(a)).filter((ip) => ip !== 'Unknown')),
     ];
+    const ipLabel = sourceIps.length === 1 ? sourceIps[0] : 'Multiple IPs';
 
     const createdAt = getAlertTimestamp(oldest);
     const updatedAt = getAlertTimestamp(first);
@@ -158,8 +170,10 @@ export function buildCasesFromAlerts(alerts: BackendAlertRecord[]): Investigatio
 
     cases.push({
       id: caseId,
-      title: `${ruleName} — ${group.length} event${group.length > 1 ? 's' : ''}`,
-      description: `Investigation for rule "${ruleName}". ${group.length} alert(s) from ${sourceIps.length || 1} source IP(s). Review related logs and alert history below.`,
+      title: sourceIps.length > 0
+        ? `${ipLabel} — ${group.length} alert${group.length > 1 ? 's' : ''}`
+        : `${ruleName} — ${group.length} alert${group.length > 1 ? 's' : ''}`,
+      description: `Investigation for ${sourceIps.length > 0 ? `IP ${ipLabel}` : `rule ${ruleName}`}. ${group.length} alert(s) ${ruleNames.length === 1 ? `matched rule "${ruleNames[0]}"` : `across ${ruleNames.length} rules`}. Review related logs and alert history below.`,
       status,
       priority,
       assignee: 'Unassigned',

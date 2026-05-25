@@ -6,6 +6,7 @@ interface KPICardProps {
   trend: string;
   trendLabel?: string;
   trendTone?: 'positive' | 'negative' | 'neutral';
+  subtext?: string;
   icon: LucideIcon;
   iconColor: string;
   borderColor: string;
@@ -19,6 +20,7 @@ export function KPICard({
   trend,
   trendLabel = 'from yesterday',
   trendTone,
+  subtext,
   icon: Icon,
   iconColor,
   borderColor,
@@ -40,6 +42,9 @@ export function KPICard({
         <div className="flex-1">
           <p className="text-sm text-gray-400 mb-1">{title}</p>
           <p className="text-3xl font-mono text-white mb-2">{value}</p>
+          {subtext ? (
+            <p className="text-xs text-gray-400 mb-1">{subtext}</p>
+          ) : null}
           <p
             className={`text-xs ${
               resolvedTrendTone === 'positive'

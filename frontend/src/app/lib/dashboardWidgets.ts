@@ -176,23 +176,76 @@ export function buildAttackLocations(logs: BackendLogRecord[]): AttackLocation[]
     .slice(0, 6);
 }
 
+/** @deprecated Prefer {@link buildLiveStreamEvents} */
 export function buildStreamEvents(logs: BackendLogRecord[]): StreamEvent[] {
-  return [...logs]
-    .sort(
-      (left, right) =>
-        new Date(right.timestamp).getTime() - new Date(left.timestamp).getTime(),
-    )
-    .slice(0, 40)
-    .map((log, index) => ({
-      id:
-        readString(log._id) ??
-        readString(log.id) ??
-        `${log.timestamp}-${log.source}-${index}`,
-      timestamp: log.timestamp,
-      type: resolveStreamType(log),
-      message: buildStreamMessage(log),
-      source: log.source || 'Unknown source',
-    }));
+  return buildLiveStreamEvents(logs);
+}
+
+/**
+ * Merge recent logs and alerts into one chronological feed (oldest → newest for terminal display).
+ */
+export function buildLiveStreamEvents(
+  logs: BackendLogRecord[],
+  alerts: BackendAlertRecord[] = [],
+  limit = 50,
+): StreamEvent[] {
+  const entries: Array<{ ts: number; event: StreamEvent }> = [];
+
+  logs.forEach((log, index) => {
+    const ts = parseLogTimestamp(log.timestamp);
+    if (ts === undefined) return;
+
+    entries.push({
+      ts,
+      event: {
+        id:
+          readString(log._id) ??
+          readString(log.id) ??
+          readString(log.event_id) ??
+          `log-${ts}-${index}`,
+        timestamp: new Date(ts).toISOString(),
+        type: resolveStreamType(log),
+        message: buildStreamMessage(log),
+        source: log.source || 'Unknown source',
+      },
+    });
+  });
+
+  alerts.forEach((alert, index) => {
+    const ts = parseLogTimestamp(readAlertTimestamp(alert));
+    if (ts === undefined) return;
+
+    const severity = normalizeSeverity(alert.severity);
+    const type: StreamEvent['type'] =
+      severity === 'critical'
+        ? 'critical'
+        : severity === 'high' || severity === 'medium'
+          ? 'warning'
+          : 'info';
+
+    entries.push({
+      ts,
+      event: {
+        id:
+          readString(alert._id) ??
+          readString(alert.id) ??
+          readString(alert.alert_id) ??
+          `alert-${ts}-${index}`,
+        timestamp: new Date(ts).toISOString(),
+        type,
+        message: buildAlertStreamMessage(alert),
+        source:
+          readString(alert.rule_name) ??
+          readString(alert.ruleName) ??
+          humanizeRuleId(readString(alert.rule_id) ?? readString(alert.ruleId)),
+      },
+    });
+  });
+
+  return entries
+    .sort((left, right) => left.ts - right.ts)
+    .slice(-limit)
+    .map((entry) => entry.event);
 }
 
 export function buildRecentAlerts(alerts: BackendAlertRecord[]): RecentAlertRecord[] {
@@ -291,7 +344,36 @@ function formatGeoLabel(
   return undefined;
 }
 
+function buildAlertStreamMessage(alert: BackendAlertRecord): string {
+  const rule =
+    readString(alert.rule_name) ??
+    readString(alert.ruleName) ??
+    humanizeRuleId(readString(alert.rule_id) ?? readString(alert.ruleId));
+  const backendMessage = readString(alert.message);
+  const parts: string[] = [`[ALERT] ${rule}`];
+
+  if (backendMessage) {
+    parts.push(backendMessage);
+  }
+
+  if (readString(alert.ip)) {
+    parts.push(`ip ${alert.ip}`);
+  }
+
+  const count = readPositiveInt(alert.occurrenceCount);
+  if (count && count > 1) {
+    parts.push(`${count} occurrences`);
+  }
+
+  return parts.join(' | ');
+}
+
 function buildStreamMessage(log: BackendLogRecord): string {
+  const backendMessage = readString(log.message);
+  if (backendMessage) {
+    return `${log.source}: ${backendMessage}`;
+  }
+
   const eventLabel = humanizeEvent(log.event);
   const details: string[] = [];
 
@@ -613,30 +695,24 @@ function formatActivityBucketLabel(ts: number, bucketMinutes: number): string {
   });
 }
 
-export interface EventsByUserAgentDatum {
-  /** Display key: account · agent */
+export interface EventsByAgentDatum {
+  /** Registered agent name, or fallback label from `agentId`. */
   source: string;
   events: number;
 }
 
 /**
- * Count logs by analyst account (`user`, often an email) and collecting `agentId`.
+ * Count ingested logs grouped by collecting agent only.
  */
-export function buildEventsByUserAndAgent(
+export function buildEventsByAgent(
   logs: BackendLogRecord[],
   topN = 10,
   /** `agentId` → display name from GET /api/agents */
   agentNamesById?: Record<string, string>,
-): EventsByUserAgentDatum[] {
+): EventsByAgentDatum[] {
   const counts = new Map<string, number>();
 
   for (const log of logs) {
-    const accountRaw = readString(log.user);
-    const account =
-      accountRaw ??
-      extractEmailFromRaw(log.raw) ??
-      extractEmailFromRaw(log.payload as Record<string, unknown> | undefined) ??
-      'Unknown account';
     const agentId = readString(log.agentId);
     const registeredName = agentId ? agentNamesById?.[agentId]?.trim() : undefined;
     const agentLabel = registeredName
@@ -644,31 +720,11 @@ export function buildEventsByUserAndAgent(
       : agentId
         ? `Agent ${agentId}`
         : 'Unknown agent';
-    const key = `${account} · ${agentLabel}`;
-    counts.set(key, (counts.get(key) ?? 0) + 1);
+    counts.set(agentLabel, (counts.get(agentLabel) ?? 0) + 1);
   }
 
   return Array.from(counts.entries())
     .sort((a, b) => b[1] - a[1])
     .slice(0, topN)
     .map(([source, events]) => ({ source, events }));
-}
-
-function extractEmailFromRaw(raw?: Record<string, unknown>): string | undefined {
-  const r = raw;
-  if (!r) return undefined;
-
-  const ctx =
-    asRecord(asRecord(r.rawEvent)?.context) ??
-    asRecord(r.context);
-  const fromCtx = readString(ctx?.email) ?? readString(asRecord(ctx?.body)?.email);
-  if (fromCtx?.includes('@')) return fromCtx;
-
-  const events = Array.isArray(r.events) ? r.events : [];
-  for (const ev of events) {
-    const c = asRecord(asRecord(ev)?.context);
-    const em = readString(c?.email) ?? readString(asRecord(c?.body)?.email);
-    if (em?.includes('@')) return em;
-  }
-  return undefined;
 }

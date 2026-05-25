@@ -1,7 +1,8 @@
 import { useState, useEffect, useMemo, useCallback, useRef } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import {
   FolderOpen, Plus, Clock, User, AlertTriangle, CheckCircle,
-  XCircle, ChevronRight, MessageSquare, Link2, Search,
+  XCircle, ChevronRight, ChevronLeft, MessageSquare, Link2, Search,
   RefreshCw, Shield, Activity, TrendingUp, Send, Tag,
   MoreHorizontal, Paperclip, Eye, FileText, History, MapPin,
   Server, ExternalLink,
@@ -91,6 +92,10 @@ export function InvestigationsPage() {
   const [allAlerts, setAllAlerts] = useState<BackendAlertRecord[]>([]);
   const [allLogs, setAllLogs] = useState<BackendLogRecord[]>([]);
   const [selectedCase, setSelectedCase] = useState<InvestigationCase | null>(null);
+  const [searchParams] = useSearchParams();
+  const alertIdQuery = searchParams.get('alertId') ?? undefined;
+  const caseIdQuery = searchParams.get('caseId') ?? undefined;
+  const [listCollapsed, setListCollapsed] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [statusFilter, setStatusFilter] = useState<StatusFilter>('all');
@@ -115,16 +120,28 @@ export function InvestigationsPage() {
       setAllLogs(logs);
       const built = buildCasesFromAlerts(alerts);
       setCases(built);
+      const visible = built.filter((c) => c.status !== 'closed');
       setSelectedCase((prev) => {
-        if (!prev) return built[0] ?? null;
-        return built.find((c) => c.id === prev.id) ?? built[0] ?? null;
+        if (caseIdQuery) {
+          const match = visible.find((c) => c.id === caseIdQuery);
+          if (match) return match;
+        }
+        if (alertIdQuery) {
+          const match = visible.find((c) =>
+            c.alerts.some((a) => getAlertId(a) === alertIdQuery),
+          );
+          if (match) return match;
+        }
+        if (!prev) return visible[0] ?? null;
+        const match = visible.find((c) => c.id === prev.id);
+        return match ?? visible[0] ?? null;
       });
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to load cases');
     } finally {
       setIsLoading(false);
     }
-  }, []);
+  }, [alertIdQuery, caseIdQuery]);
 
   useEffect(() => {
     void loadCases();
@@ -152,16 +169,21 @@ export function InvestigationsPage() {
 
   // ── Derived ───────────────────────────────────────────────────────────────
 
+  const visibleCases = useMemo(
+    () => cases.filter((c) => c.status !== 'closed'),
+    [cases],
+  );
+
   const counts = useMemo(() => ({
-    all:            cases.length,
-    open:           cases.filter((c) => c.status === 'open').length,
-    in_progress:    cases.filter((c) => c.status === 'in_progress').length,
-    pending_review: cases.filter((c) => c.status === 'pending_review').length,
-    closed:         cases.filter((c) => c.status === 'closed').length,
-  }), [cases]);
+    all:            visibleCases.length,
+    open:           visibleCases.filter((c) => c.status === 'open').length,
+    in_progress:    visibleCases.filter((c) => c.status === 'in_progress').length,
+    pending_review: visibleCases.filter((c) => c.status === 'pending_review').length,
+    closed:         0,
+  }), [visibleCases]);
 
   const filteredCases = useMemo(() => {
-    return cases.filter((c) => {
+    return visibleCases.filter((c) => {
       const q = search.toLowerCase();
       const matchSearch = !q || c.title.toLowerCase().includes(q) ||
         c.id.toLowerCase().includes(q) || c.description.toLowerCase().includes(q);
@@ -169,7 +191,7 @@ export function InvestigationsPage() {
       const matchPriority = priorityFilter === 'all' || c.priority === priorityFilter;
       return matchSearch && matchStatus && matchPriority;
     });
-  }, [cases, search, statusFilter, priorityFilter]);
+  }, [visibleCases, search, statusFilter, priorityFilter]);
 
   // ── Actions ───────────────────────────────────────────────────────────────
 
@@ -207,10 +229,11 @@ export function InvestigationsPage() {
         );
         const built = buildCasesFromAlerts(next);
         setCases(built);
+        const visible = built.filter((c) => c.status !== 'closed');
         setSelectedCase((sel) => {
-          if (!sel) return sel;
+          if (!sel) return visible[0] ?? null;
           const rebuilt = built.find((c) => c.id === sel.id);
-          if (!rebuilt) return sel;
+          if (!rebuilt || rebuilt.status === 'closed') return visible[0] ?? null;
           return {
             ...rebuilt,
             timeline: [
@@ -308,10 +331,6 @@ export function InvestigationsPage() {
               <RefreshCw className={`size-4 ${isLoading ? 'animate-spin' : ''}`} />
               Refresh
             </button>
-            <button className="flex items-center gap-2 px-4 py-2 bg-[#4f46e5] hover:bg-[#4338ca] text-white text-sm">
-              <Plus className="size-4" />
-              New Case
-            </button>
           </div>
         </div>
 
@@ -323,7 +342,6 @@ export function InvestigationsPage() {
               { key: 'open',          label: `Open (${counts.open})` },
               { key: 'in_progress',   label: `In Progress (${counts.in_progress})` },
               { key: 'pending_review',label: `Pending Review (${counts.pending_review})` },
-              { key: 'closed',        label: `Closed (${counts.closed})` },
             ] as const
           ).map(({ key, label }) => (
             <button
@@ -347,7 +365,6 @@ export function InvestigationsPage() {
           { label: 'Total Cases',    value: counts.all,         icon: FolderOpen,   accent: '#4f46e5', sub: 'grouped investigations' },
           { label: 'Open',           value: counts.open,        icon: XCircle,      accent: '#ef4444', sub: 'awaiting action' },
           { label: 'In Progress',    value: counts.in_progress, icon: Activity,     accent: '#f59e0b', sub: 'being investigated' },
-          { label: 'Closed',         value: counts.closed,      icon: CheckCircle,  accent: '#10b981', sub: 'resolved cases' },
         ].map(({ label, value, icon: Icon, accent, sub }) => (
           <div
             key={label}
@@ -370,13 +387,13 @@ export function InvestigationsPage() {
 
       {/* ── Loading ──────────────────────────────────────────────────────── */}
       {isLoading && (
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-          <div className="lg:col-span-1 space-y-3">
+        <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
+          <div className="lg:col-span-4 space-y-3 lg:border-r lg:border-[#1f1f2e] lg:pr-4">
             {Array.from({ length: 5 }).map((_, i) => (
               <div key={i} className="h-[100px] animate-pulse bg-[#1a1a24] border border-[#1f1f2e]" />
             ))}
           </div>
-          <div className="lg:col-span-2">
+          <div className="lg:col-span-8 lg:pl-4">
             <div className="h-[500px] animate-pulse bg-[#1a1a24] border border-[#1f1f2e]" />
           </div>
         </div>
@@ -396,41 +413,78 @@ export function InvestigationsPage() {
 
       {/* ── Main layout ──────────────────────────────────────────────────── */}
       {!isLoading && !error && (
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+        <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
 
           {/* ── Case list (left column) ────────────────────────────────── */}
-          <div className="lg:col-span-1 space-y-3">
+          <div className={`space-y-3 ${listCollapsed ? 'lg:col-span-1 lg:pr-0' : 'lg:col-span-4 lg:pr-4'} lg:border-r lg:border-[#1f1f2e]`}>
 
-            {/* Search + priority filter */}
-            <div className="space-y-2">
-              <div className="relative">
-                <Search className="absolute left-3 top-1/2 -translate-y-1/2 size-3.5 text-gray-500" />
-                <input
-                  type="text"
-                  value={search}
-                  onChange={(e) => setSearch(e.target.value)}
-                  placeholder="Search cases..."
-                  className="w-full bg-[#1a1a24] border border-[#2a2a3a] pl-9 pr-4 py-2 text-sm text-white placeholder:text-gray-600 focus:outline-none focus:border-[#4f46e5]"
-                />
+            {/* Search + priority filter (hidden when collapsed) */}
+            {!listCollapsed ? (
+              <div className="space-y-2">
+                <div className="relative">
+                  <Search className="absolute left-3 top-1/2 -translate-y-1/2 size-3.5 text-gray-500" />
+                  <input
+                    type="text"
+                    value={search}
+                    onChange={(e) => setSearch(e.target.value)}
+                    placeholder="Search cases..."
+                    className="w-full bg-[#1a1a24] border border-[#2a2a3a] pl-9 pr-4 py-2 text-sm text-white placeholder:text-gray-600 focus:outline-none focus:border-[#4f46e5]"
+                  />
+                </div>
+                <select
+                  value={priorityFilter}
+                  onChange={(e) => setPriorityFilter(e.target.value as typeof priorityFilter)}
+                  className="w-full bg-[#1a1a24] border border-[#2a2a3a] px-3 py-2 text-sm text-white focus:outline-none focus:border-[#4f46e5]"
+                >
+                  <option value="all">All Priorities</option>
+                  <option value="critical">Critical</option>
+                  <option value="high">High</option>
+                  <option value="medium">Medium</option>
+                  <option value="low">Low</option>
+                </select>
               </div>
-              <select
-                value={priorityFilter}
-                onChange={(e) => setPriorityFilter(e.target.value as typeof priorityFilter)}
-                className="w-full bg-[#1a1a24] border border-[#2a2a3a] px-3 py-2 text-sm text-white focus:outline-none focus:border-[#4f46e5]"
-              >
-                <option value="all">All Priorities</option>
-                <option value="critical">Critical</option>
-                <option value="high">High</option>
-                <option value="medium">Medium</option>
-                <option value="low">Low</option>
-              </select>
-            </div>
+            ) : (
+              <div className="flex items-center justify-end">
+                <button
+                  title="Expand case list"
+                  onClick={() => setListCollapsed(false)}
+                  className="p-1 bg-[#1a1a24] border border-[#2a2a3a] text-gray-400 hover:text-white"
+                >
+                  <ChevronLeft className="size-4" />
+                </button>
+              </div>
+            )}
 
-            {/* Case cards */}
+            {/* Case cards or compact tabs */}
             {filteredCases.length === 0 ? (
               <div className="bg-[#0f0f17] border border-[#1f1f2e] p-8 text-center">
                 <FolderOpen className="size-8 text-gray-600 mx-auto mb-2" />
                 <p className="text-sm text-gray-400">No cases match filters</p>
+              </div>
+            ) : listCollapsed ? (
+              <div className="flex flex-col items-center gap-2 py-2 overflow-y-auto">
+                {filteredCases.map((c) => {
+                  const pr = PRIORITY_STYLES[c.priority];
+                  const isSelected = selectedCase?.id === c.id;
+
+                  return (
+                    <button
+                      key={c.id}
+                      title={c.title}
+                      onClick={() => {
+                        setSelectedCase(c);
+                        setActiveTab('overview');
+                        setExpandedAlertId(null);
+                      }}
+                      className={`w-10 h-10 rounded-full flex items-center justify-center text-xs text-white bg-[#0f0f17] border transition-all ${
+                        isSelected ? 'ring-2 ring-[#4f46e5] bg-[#0b0b12]' : 'hover:bg-[#111118]'
+                      }`}
+                      style={{ borderColor: pr.border }}
+                    >
+                      {c.title.charAt(0).toUpperCase()}
+                    </button>
+                  );
+                })}
               </div>
             ) : (
               <div className="space-y-2">
@@ -448,8 +502,8 @@ export function InvestigationsPage() {
                         setExpandedAlertId(null);
                       }}
                       className={`bg-[#0f0f17] border border-[#1f1f2e] p-4 cursor-pointer transition-all hover:border-[#2f2f3e] ${
-                        isSelected ? 'ring-2 ring-[#4f46e5]' : ''
-                      }`}
+                          isSelected ? 'ring-2 ring-[#4f46e5] bg-[#0b0b12]' : ''
+                        }`}
                       style={{ borderLeftColor: pr.border, borderLeftWidth: 3 }}
                     >
                       <div className="flex items-start justify-between mb-2">
@@ -491,7 +545,7 @@ export function InvestigationsPage() {
           </div>
 
           {/* ── Case detail (right columns) ───────────────────────────── */}
-          <div className="lg:col-span-2">
+          <div className={`${listCollapsed ? 'lg:col-span-11 lg:pl-6' : 'lg:col-span-8 lg:pl-4'}`}>
             {!selectedCase ? (
               <div className="bg-[#0f0f17] border border-[#1f1f2e] p-16 text-center">
                 <FolderOpen className="size-12 text-gray-600 mx-auto mb-4" />

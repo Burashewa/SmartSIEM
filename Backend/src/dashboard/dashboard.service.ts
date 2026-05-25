@@ -219,7 +219,7 @@ export class DashboardService {
     filter: Record<string, unknown>,
   ): Promise<AlertSeverityPoint[]> {
     const counts = await this.alertModel.aggregate<{ _id: string; value: number }>([
-      { $match: filter },
+      { $match: { ...filter, status: { $ne: 'false_positive' } } },
       {
         $group: {
           _id: {

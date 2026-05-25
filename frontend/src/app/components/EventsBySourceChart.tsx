@@ -30,9 +30,9 @@ export function EventsBySourceChart({ data, isLoading = false }: EventsBySourceC
   return (
     <div className="bg-[#0f0f17] border border-[#1f1f2e] p-6 min-w-0">
       <div className="mb-4">
-        <h3 className="text-lg font-medium text-white">Logs by account &amp; agent</h3>
+        <h3 className="text-lg font-medium text-white">Logs by agent</h3>
         <p className="text-sm text-gray-400 mt-1">
-          Top agent display names from your registered collectors.
+          Top collectors by ingested log volume (registered agent names).
         </p>
       </div>
 
@@ -87,7 +87,7 @@ export function EventsBySourceChart({ data, isLoading = false }: EventsBySourceC
         <p className="mt-3 text-xs text-gray-500">Loading breakdown…</p>
       ) : !hasData ? (
         <p className="mt-3 text-xs text-gray-500">
-          No ingested logs yet, or user/agent fields are missing on events.
+          No ingested logs yet, or agent IDs are missing on events.
         </p>
       ) : null}
     </div>
