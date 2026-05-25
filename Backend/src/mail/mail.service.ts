@@ -57,39 +57,24 @@ export class MailService implements OnModuleInit {
 
 
   async onModuleInit(): Promise<void> {
-
     if (!this.isConfigured()) {
-
       this.logger.warn(
-
         'SMTP not configured — set SMTP_HOST, SMTP_USER, and SMTP_PASS in SmartSIEM/.env or Backend/.env',
-
       );
-
       return;
-
     }
 
-
-
-    try {
-
-      await this.verifyConnection();
-
-      this.logger.log(
-
-        `SMTP ready (${this.getHost() || 'gmail'}:${this.getPort()}, timeout ${this.getTimeoutMs()}ms)`,
-
-      );
-
-    } catch (err) {
-
-      const reason = err instanceof Error ? err.message : String(err);
-
-      this.logger.error(`SMTP connection failed: ${reason}`);
-
-    }
-
+    // Verify in background so HTTP can bind immediately (Render health checks).
+    void this.verifyConnection()
+      .then(() => {
+        this.logger.log(
+          `SMTP ready (${this.getHost() || 'gmail'}:${this.getPort()}, timeout ${this.getTimeoutMs()}ms)`,
+        );
+      })
+      .catch((err: unknown) => {
+        const reason = err instanceof Error ? err.message : String(err);
+        this.logger.error(`SMTP connection failed: ${reason}`);
+      });
   }
 
 

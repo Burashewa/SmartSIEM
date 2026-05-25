@@ -55,7 +55,11 @@ function resolveEnvFilePaths(): string[] {
           .replace(/^["']|["']$/g, '')
           .trim();
 
-        return { uri: mongoUri, dbName };
+        return {
+          uri: mongoUri,
+          dbName,
+          serverSelectionTimeoutMS: 10_000,
+        };
       },
     }),
     LogsModule,

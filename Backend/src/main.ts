@@ -9,7 +9,7 @@ setDefaultResultOrder('ipv4first');
 async function bootstrap() {
   const app = await NestFactory.create(AppModule);
   const configService = app.get(ConfigService);
-  const port = Number(configService.get<string>('PORT') ?? 5001);
+  const port = Number(process.env.PORT ?? configService.get<string>('PORT') ?? 5001);
 
   const trustProxy =
     (configService.get<string>('TRUST_PROXY') ?? 'true').toLowerCase() === 'true';
@@ -22,7 +22,11 @@ async function bootstrap() {
     credentials: false,
   });
   app.setGlobalPrefix('api');
-  await app.listen(port);
+  await app.listen(port, '0.0.0.0');
+  console.log(`SmartSIEM API listening on 0.0.0.0:${port}`);
 }
 
-bootstrap();
+bootstrap().catch((err) => {
+  console.error('Failed to start SmartSIEM API:', err);
+  process.exit(1);
+});
