@@ -1,4 +1,4 @@
-import { User, Activity, Plus } from 'lucide-react';
+import { User, Plus } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { SystemStatus } from './SystemStatus';
@@ -113,15 +113,6 @@ export function Header({ username, role, onLogout }: HeaderProps) {
   const databaseProvider = status?.database.provider ?? 'MongoDB';
   const ingestionRate = status?.ingestionRate.eps ?? null;
 
-  const systemState = getSystemState(status);
-  const isHealthy = systemState === 'healthy';
-  const isCritical = systemState === 'critical';
-  const systemLabel = isHealthy
-    ? 'Healthy'
-    : isCritical
-      ? 'Critical'
-      : 'Unknown';
-
   return (
     <header className="h-16 bg-[#0f0f17] border-b border-[#1f1f2e] flex items-center px-6">
       
@@ -132,41 +123,6 @@ export function Header({ username, role, onLogout }: HeaderProps) {
           databaseConnected={databaseConnected}
           databaseProvider={databaseProvider}
         />
-
-        <div className="flex items-center gap-2 px-3 py-1.5 bg-[#1a1a24] border border-[#2a2a3a]">
-          <Activity className="size-4" />
-          <span className="text-sm">System Status:</span>
-
-          <div className="flex items-center gap-1.5">
-            <div
-              className={`size-2 rounded-full ${
-                isHealthy
-                  ? 'bg-[#10b981] shadow-[0_0_8px_rgba(16,185,129,0.6)]'
-                  : isCritical
-                    ? 'bg-[#ef4444] shadow-[0_0_8px_rgba(239,68,68,0.6)]'
-                    : 'bg-[#9ca3af] shadow-[0_0_8px_rgba(156,163,175,0.6)]'
-              }`}
-            />
-
-            <span
-              className={`text-xs font-medium ${
-                isHealthy
-                  ? 'text-[#10b981]'
-                  : isCritical
-                    ? 'text-[#ef4444]'
-                    : 'text-[#9ca3af]'
-              }`}
-            >
-              {systemLabel}
-            </span>
-          </div>
-        </div>
-
-        {error && (
-          <span className="hidden 2xl:block text-xs text-[#fca5a5] max-w-56 truncate">
-            {error}
-          </span>
-        )}
       </div>
 
       {/* RIGHT SECTION */}

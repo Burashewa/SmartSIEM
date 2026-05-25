@@ -15,15 +15,8 @@ import {
   requestPasswordReset,
   resetPassword,
   verifyEmail,
-  resendVerificationEmail,
   getVerificationStatus,
-  ResendVerificationError,
 } from '../api/auth';
-import {
-  getVerificationResendCooldownRemaining,
-  startVerificationResendCooldown,
-  syncVerificationResendCooldown,
-} from '../verificationResendCooldown';
 import { isReservedUsername } from '../authReserved';
 import { evaluatePassword } from '../passwordPolicy';
 import { PasswordStrengthPanel } from './PasswordStrengthPanel';
@@ -34,8 +27,7 @@ type AuthMode =
   | 'register'
   | 'forgot'
   | 'reset'
-  | 'verify-pending'
-  | 'resend-verification';
+  | 'verify-pending';
 
 interface LoginScreenProps {
   isLoading: boolean;
@@ -73,10 +65,6 @@ export function LoginScreen({
   const [pendingUsername, setPendingUsername] = useState('');
   const [verifyingEmail, setVerifyingEmail] = useState(false);
   const [checkingVerification, setCheckingVerification] = useState(false);
-  const [resendCooldownSec, setResendCooldownSec] = useState(() =>
-    getVerificationResendCooldownRemaining(),
-  );
-  const [resendingVerification, setResendingVerification] = useState(false);
 
   const passwordValidation = useMemo(() => evaluatePassword(password), [password]);
   const passwordPolicyMet = passwordValidation.valid;
@@ -88,13 +76,6 @@ export function LoginScreen({
   const canSubmitNewPassword =
     !requiresStrongPassword ||
     (passwordPolicyMet && confirmPasswordMatches && !usernameReservedForRegister);
-
-  useEffect(() => {
-    const tick = () => setResendCooldownSec(getVerificationResendCooldownRemaining());
-    tick();
-    const timer = window.setInterval(tick, 1000);
-    return () => window.clearInterval(timer);
-  }, []);
 
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
@@ -144,37 +125,6 @@ export function LoginScreen({
     if (next !== 'reset') {
       setResetId('');
       setResetFromLink(false);
-    }
-  };
-
-  const handleResendVerification = async (targetIdentifier: string) => {
-    const id = targetIdentifier.trim();
-    if (!id) {
-      setLocalError('Enter your account email or username');
-      return;
-    }
-    if (resendCooldownSec > 0) {
-      return;
-    }
-    setResendingVerification(true);
-    clearMessages();
-    try {
-      const result = await resendVerificationEmail(id);
-      syncVerificationResendCooldown(result.retryAfterSec);
-      setResendCooldownSec(getVerificationResendCooldownRemaining());
-      setSuccessMessage(
-        'If an unverified account exists for that address, a new verification link has been sent.',
-      );
-    } catch (err) {
-      if (err instanceof ResendVerificationError) {
-        startVerificationResendCooldown(err.retryAfterSec);
-        setResendCooldownSec(getVerificationResendCooldownRemaining());
-        setLocalError(err.message);
-      } else {
-        setLocalError(err instanceof Error ? err.message : 'Could not resend verification email');
-      }
-    } finally {
-      setResendingVerification(false);
     }
   };
 
@@ -253,11 +203,6 @@ export function LoginScreen({
       return;
     }
 
-    if (mode === 'resend-verification') {
-      await handleResendVerification(identifier);
-      return;
-    }
-
     if (mode === 'register') {
       const trimmedEmail = email.trim();
       if (isReservedUsername(username)) {
@@ -285,8 +230,7 @@ export function LoginScreen({
         setIdentifier(trimmedEmail);
         setSuccessMessage(result.message);
         if (result.verificationEmailSent) {
-          startVerificationResendCooldown();
-          setResendCooldownSec(getVerificationResendCooldownRemaining());
+          setSuccessMessage(result.message);
         }
         setMode('verify-pending');
         setPassword('');
@@ -308,7 +252,6 @@ export function LoginScreen({
       ? 'Choose a new password for your account'
       : 'Choose a new password',
     'verify-pending': 'Verify your email',
-    'resend-verification': 'Resend verification',
   };
 
   const subtitleByMode: Record<AuthMode, string> = {
@@ -319,8 +262,6 @@ export function LoginScreen({
     forgot: 'Enter your account email. We will send a reset link if the account exists.',
     reset: 'Enter the token from your reset link and a new password.',
     'verify-pending': `We sent a verification link to ${pendingEmail || 'your email'}. Open it, then click below — you cannot sign in until verified.`,
-    'resend-verification':
-      'Enter your email or username to receive a new verification link.',
   };
 
   const submitLabel =
@@ -334,11 +275,7 @@ export function LoginScreen({
             ? 'Create account'
             : mode === 'forgot'
               ? 'Email reset link'
-              : mode === 'resend-verification'
-                ? resendCooldownSec > 0
-                  ? `Resend in ${resendCooldownSec}s`
-                  : 'Send verification email'
-                : 'Update password';
+              : 'Update password';
 
   return (
     <div className="auth-page">
@@ -381,18 +318,6 @@ export function LoginScreen({
                 onClick={() => void handleCheckVerification()}
               >
                 {checkingVerification ? 'Checking...' : 'I verified my email'}
-              </button>
-              <button
-                type="button"
-                className="auth-link auth-link--block"
-                disabled={resendCooldownSec > 0 || resendingVerification}
-                onClick={() => void handleResendVerification(pendingEmail || pendingUsername)}
-              >
-                {resendingVerification
-                  ? 'Sending...'
-                  : resendCooldownSec > 0
-                    ? `Resend verification in ${resendCooldownSec}s`
-                    : 'Resend verification email'}
               </button>
             </div>
           ) : null}
@@ -437,11 +362,9 @@ export function LoginScreen({
 
           {mode !== 'verify-pending' ? (
           <form className="auth-form" onSubmit={handleSubmit}>
-            {mode === 'forgot' || mode === 'resend-verification' ? (
+            {mode === 'forgot' ? (
               <div className="auth-field">
-                <label htmlFor="auth-email">
-                  {mode === 'resend-verification' ? 'Email or username' : 'Email address'}
-                </label>
+                <label htmlFor="auth-email">Email address</label>
                 <div className="auth-input-wrap">
                   <Mail />
                   <input
@@ -603,13 +526,6 @@ export function LoginScreen({
                 <button type="button" className="auth-link" onClick={() => switchMode('forgot')}>
                   Forgot password?
                 </button>
-                <button
-                  type="button"
-                  className="auth-link"
-                  onClick={() => switchMode('resend-verification')}
-                >
-                  Resend verification
-                </button>
               </div>
             ) : null}
 
@@ -619,8 +535,6 @@ export function LoginScreen({
               disabled={
                 isLoading ||
                 verifyingEmail ||
-                resendingVerification ||
-                (mode === 'resend-verification' && resendCooldownSec > 0) ||
                 (requiresStrongPassword && !canSubmitNewPassword)
               }
             >

@@ -5,9 +5,8 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from './ui/tabs';
 import OverviewTab from './tabs/OverviewTab';
 import UsersTab from './tabs/UsersTab';
 import AuditTab from './tabs/AuditTab';
-import AgentsTab from './tabs/AgentsTab';
 
-type TabKey = 'overview' | 'users' | 'audit' | 'agents';
+type TabKey = 'overview' | 'users' | 'audit';
 
 export function AdminConsolePage() {
   const [tab, setTab] = useState<TabKey>('overview');
@@ -55,7 +54,6 @@ export function AdminConsolePage() {
               ['overview', 'Overview'],
               ['users', 'Users'],
               ['audit', 'Audit Log'],
-              ['agents', 'Agents'],
             ].map(([key, label]) => (
               <TabsTrigger
                 key={key}
@@ -72,7 +70,6 @@ export function AdminConsolePage() {
           <TabsContent value="overview" className="mt-0">
             <OverviewTab
               refreshKey={refreshKey}
-              onGoToAgents={() => setTab('agents')}
               onGoToAudit={() => setTab('audit')}
               onLoaded={setLastUpdated}
             />
@@ -82,9 +79,6 @@ export function AdminConsolePage() {
           </TabsContent>
           <TabsContent value="audit" className="mt-0">
             <AuditTab refreshKey={refreshKey} />
-          </TabsContent>
-          <TabsContent value="agents" className="mt-0">
-            <AgentsTab refreshKey={refreshKey} onOwnerClick={() => setTab('users')} />
           </TabsContent>
         </div>
       </Tabs>

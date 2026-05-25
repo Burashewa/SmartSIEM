@@ -12,12 +12,10 @@ const SEV_COLORS: Record<string, string> = {
 
 export default function OverviewTab({
   refreshKey,
-  onGoToAgents,
   onGoToAudit,
   onLoaded,
 }: {
   refreshKey: number;
-  onGoToAgents: () => void;
   onGoToAudit: () => void;
   onLoaded: (ts: string) => void;
 }) {
@@ -86,21 +84,7 @@ export default function OverviewTab({
         />
         <KPICard label="Open Alerts" value={data.alerts.open} subtext={`${data.alerts.critical} critical`} tone={data.alerts.critical > 0 ? 'danger' : 'default'} />
         <KPICard label="Failed Logins (24h)" value={data.security.failedLogins24h} tone={data.security.failedLogins24h > 0 ? 'warning' : 'default'} />
-        <KPICard label="Detection Rules" value={`${data.rules.enabled} / ${data.rules.total}`} subtext="enabled" />
-        <KPICard label="Agents" value={data.agents.total} subtext="View ->" onClick={onGoToAgents} />
-      </div>
-
-      <div className={`${cardCls} flex flex-wrap items-center gap-6 p-4`}>
-        <HealthDot label="MongoDB" value={data.system.mongoStatus ?? 'unknown'} ok={data.system.mongoStatus === 'connected'} />
-        <HealthDot label="System Status" value={data.system.systemStatus.status} ok={data.system.systemStatus.status === 'healthy'} />
-        <div className="text-sm">
-          <span className={mutedText}>Active Alerts: </span>
-          <span className="text-white">{data.system.activeAlerts}</span>
-        </div>
-        <div className="text-sm">
-          <span className={mutedText}>Critical Threats: </span>
-          <span className="text-red-400">{data.system.criticalThreats}</span>
-        </div>
+        <KPICard label="Agents" value={data.agents.total} subtext="Total" />
       </div>
 
       <div className="grid gap-4 lg:grid-cols-2">
@@ -123,16 +107,6 @@ export default function OverviewTab({
               </BarChart>
             </ResponsiveContainer>
           </div>
-        </div>
-
-        <div className={`${cardCls} p-5`}>
-          <h3 className="mb-4 text-sm font-semibold text-white">Detection Rules</h3>
-          <p className={`text-sm ${mutedText}`}>
-            {data.rules.enabled} of {data.rules.total} rules are currently enabled.
-          </p>
-          <button type="button" className="mt-4 text-sm text-[#818cf8] hover:underline">
-            View Detection Rules {'->'}
-          </button>
         </div>
       </div>
 
@@ -168,16 +142,6 @@ export default function OverviewTab({
           </tbody>
         </table>
       </div>
-    </div>
-  );
-}
-
-function HealthDot({ label, value, ok }: { label: string; value: string; ok: boolean }) {
-  return (
-    <div className="flex items-center gap-2 text-sm">
-      <span className={`h-2 w-2 rounded-full ${ok ? 'bg-green-500' : 'bg-red-500'}`} />
-      <span className={mutedText}>{label}:</span>
-      <span className={ok ? 'text-green-400' : 'text-red-400'}>{value}</span>
     </div>
   );
 }

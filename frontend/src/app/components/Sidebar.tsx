@@ -5,7 +5,6 @@ import {
   Shield,
   Settings,
   FileBarChart,
-  GitBranch,
   Cpu,
   ShieldCheck,
 } from 'lucide-react';
@@ -23,7 +22,6 @@ const navItems = [
   { id: 'logs', label: 'Log Management', icon: FileText },
   { id: 'alerts-and-threats', label: 'Alerts & Threats', icon: AlertTriangle },
   { id: 'threat-intelligence', label: 'Threat Intelligence', icon: Shield },
-  { id: 'detection-rules', label: 'Detection Rules', icon: GitBranch },
   { id: 'ai-recommendations', label: 'AI Assistant', icon: Cpu },
   { id: 'investigations', label: 'Investigations', icon: FileText },
   { id: 'reports', label: 'Reports', icon: FileBarChart },

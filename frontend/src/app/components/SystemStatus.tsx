@@ -42,9 +42,6 @@ export function SystemStatus({
           }`}>
             {databaseConnected ? 'Live' : 'Offline'}
           </span>
-          <span className="text-xs text-gray-500 font-mono">
-            ({databaseProvider})
-          </span>
         </div>
       </div>
     </div>
