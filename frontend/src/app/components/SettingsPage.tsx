@@ -23,6 +23,7 @@ import {
   type AgentRecord,
   type CreatedAgentRecord,
 } from '../api/agents';
+import { useSearchParams } from 'react-router-dom';
 
 const STORAGE_OPTIONS: Array<{
   value: AgentApiKeyStorageMode;
@@ -50,6 +51,8 @@ export function SettingsPage() {
   const [newAgentName, setNewAgentName] = useState('');
   const [newAgentStorageMode, setNewAgentStorageMode] =
     useState<AgentApiKeyStorageMode>('one_time');
+  const [newAgentAllowedIps, setNewAgentAllowedIps] = useState('');
+  const [searchParams] = useSearchParams();
   const [isCreatingAgent, setIsCreatingAgent] = useState(false);
   const [latestCreatedAgent, setLatestCreatedAgent] = useState<CreatedAgentRecord | null>(null);
   const [showLatestApiKey, setShowLatestApiKey] = useState(true);
@@ -64,6 +67,10 @@ export function SettingsPage() {
   useEffect(() => {
     void loadAgents();
   }, []);
+
+  useEffect(() => {
+    setShowNewAgentForm(searchParams.get('createAgent') === 'true');
+  }, [searchParams]);
 
   async function loadAgents(isManualRefresh = false) {
     if (isManualRefresh) {
@@ -105,11 +112,16 @@ export function SettingsPage() {
 
     setIsCreatingAgent(true);
     try {
-      const createdAgent = await createAgent(trimmedName, newAgentStorageMode === 'stored');
+      const createdAgent = await createAgent(
+        trimmedName,
+        newAgentStorageMode === 'stored',
+        newAgentAllowedIps,
+      );
       setLatestCreatedAgent(createdAgent);
       setShowLatestApiKey(true);
       setShowNewAgentForm(false);
       setNewAgentName('');
+      setNewAgentAllowedIps('');
       setNewAgentStorageMode('one_time');
       setAgentsError(null);
       await loadAgents(true);
@@ -381,6 +393,23 @@ export function SettingsPage() {
                 </div>
               </div>
 
+              <div>
+                <label className="text-sm text-gray-400 mb-2 block">
+                  Allowed ingest IPs (optional)
+                </label>
+                <input
+                  type="text"
+                  value={newAgentAllowedIps}
+                  onChange={(event) => setNewAgentAllowedIps(event.target.value)}
+                  placeholder="203.0.113.10, 10.0.0.5"
+                  className="w-full bg-[#1a1a24] border border-[#2a2a3a] px-4 py-2.5 text-sm text-white placeholder:text-gray-500 focus:outline-none focus:border-[#4f46e5] transition-colors rounded"
+                />
+                <p className="text-xs text-gray-500 mt-2">
+                  Restrict this agent to specific collector IPs. Leave empty for no per-agent limit.
+                  Always use HTTPS for production ingest URLs.
+                </p>
+              </div>
+
               <div
                 className={`rounded-lg border px-4 py-3 text-sm ${
                   newAgentStorageMode === 'stored'
@@ -406,6 +435,7 @@ export function SettingsPage() {
                 onClick={() => {
                   setShowNewAgentForm(false);
                   setNewAgentName('');
+                  setNewAgentAllowedIps('');
                   setNewAgentStorageMode('one_time');
                 }}
                 className="px-4 py-2 bg-[#1a1a24] border border-[#2a2a3a] text-gray-300 hover:text-white rounded transition-colors text-sm"
@@ -504,6 +534,9 @@ export function SettingsPage() {
                         <span>
                           Updated: {agent.updatedAt ? new Date(agent.updatedAt).toLocaleString() : 'Unknown'}
                         </span>
+                        {agent.allowedIps && agent.allowedIps.length > 0 ? (
+                          <span>Allowed IPs: {agent.allowedIps.join(', ')}</span>
+                        ) : null}
                       </div>
 
                       <div

@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState, useCallback } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { AlertTriangle, Clock, CheckCircle, XCircle, Eye } from 'lucide-react';
 import { fetchAlerts, patchAlertStatus, type BackendAlertRecord } from '../api/dashboard';
 import {
@@ -152,6 +153,7 @@ export function AlertsPage() {
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [isUpdating, setIsUpdating] = useState(false);
+  const navigate = useNavigate();
 
   // Mirrors reference filter shape exactly
   const [statusFilter, setStatusFilter] = useState<StatusFilter>('all');
@@ -241,6 +243,9 @@ export function AlertsPage() {
 
     try {
       await patchAlertStatus(selectedAlert.id, newStatus);
+      if (newStatus === 'investigating') {
+        navigate(`/investigations?alertId=${encodeURIComponent(selectedAlert.id)}`);
+      }
     } catch (err) {
       console.error('Failed to update alert status:', err);
       // Rollback on failure
@@ -455,7 +460,6 @@ export function AlertsPage() {
                       </span>
                     )}
                   </div>
-                  <p className="text-sm text-gray-400 font-mono">{selectedAlert.id}</p>
                 </div>
                 <span className={`text-xs font-medium px-3 py-1.5 uppercase ${getSeverityColor(selectedAlert.severity)}`}>
                   {selectedAlert.severity}
@@ -518,10 +522,6 @@ export function AlertsPage() {
                     )}
                   </div>
                   <div>
-                    <h4 className="text-sm font-medium text-white mb-2">Target IP</h4>
-                    <p className="text-sm text-gray-400 font-mono">{selectedAlert.targetIp}</p>
-                  </div>
-                  <div>
                     <h4 className="text-sm font-medium text-white mb-2">Detected By</h4>
                     <p className="text-sm text-gray-400">{selectedAlert.detectedBy}</p>
                   </div>
@@ -534,37 +534,6 @@ export function AlertsPage() {
                       </span>
                     </div>
                   </div>
-                </div>
-
-                <div>
-                  <h4 className="text-sm font-medium text-white mb-2">Affected Assets</h4>
-                  <div className="flex flex-wrap gap-2">
-                    {selectedAlert.affectedAssets.length > 0 ? (
-                      selectedAlert.affectedAssets.map((asset) => (
-                        <span key={asset} className="bg-[#1a1a24] border border-[#2a2a3a] px-2 py-1 text-xs text-gray-400 font-mono">
-                          {asset}
-                        </span>
-                      ))
-                    ) : (
-                      <span className="text-gray-500 text-sm">No affected assets listed.</span>
-                    )}
-                  </div>
-                </div>
-
-                <div>
-                  <h4 className="text-sm font-medium text-white mb-2">Recommendations</h4>
-                  <ul className="space-y-2">
-                    {selectedAlert.recommendations.length > 0 ? (
-                      selectedAlert.recommendations.map((rec, idx) => (
-                        <li key={idx} className="text-sm text-gray-400 flex items-start gap-2">
-                          <span className="text-[#4f46e5] mt-1">•</span>
-                          {rec}
-                        </li>
-                      ))
-                    ) : (
-                      <li className="text-sm text-gray-400">No recommendations available.</li>
-                    )}
-                  </ul>
                 </div>
 
                 {/* Action buttons — wired to updateAlertStatus with disabled states */}

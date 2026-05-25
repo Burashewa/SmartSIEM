@@ -1,8 +1,26 @@
-import { User, Activity } from 'lucide-react';
+import { User, Activity, Plus } from 'lucide-react';
 import { useEffect, useState } from 'react';
+import { Link, useNavigate } from 'react-router-dom';
 import { SystemStatus } from './SystemStatus';
 import { fetchSystemStatus, type SystemStatusResponse } from '../api/system';
 import type { SiemRole } from '../api/auth';
+import {
+  AlertDialog,
+  AlertDialogContent,
+  AlertDialogHeader,
+  AlertDialogFooter,
+  AlertDialogTitle,
+  AlertDialogDescription,
+  AlertDialogAction,
+  AlertDialogCancel,
+} from '../features/admin/ui/alert-dialog';
+import {
+  DropdownMenu,
+  DropdownMenuTrigger,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+} from '../features/admin/ui/dropdown-menu';
 
 interface HeaderProps {
   username: string;
@@ -87,6 +105,8 @@ function useSystemStatus(pollInterval = 30000) {
 }
 
 export function Header({ username, role, onLogout }: HeaderProps) {
+  const navigate = useNavigate();
+  const [logoutDialogOpen, setLogoutDialogOpen] = useState(false);
   const { status, error } = useSystemStatus();
 
   const databaseConnected = status?.database.connected ?? false;
@@ -151,22 +171,72 @@ export function Header({ username, role, onLogout }: HeaderProps) {
 
       {/* RIGHT SECTION */}
       <div className="flex items-center gap-2 ml-auto">
-        {/* User */}
-        <button
-          type="button"
-          onClick={() => void onLogout()}
-          className="flex items-center gap-3 px-3 py-1.5 hover:bg-[#1a1a24] transition-colors rounded-md"
-          title="Sign out"
-        >
-          <div className="size-8 rounded-full bg-[#4f46e5] flex items-center justify-center shrink-0">
-            <User className="size-4 text-white" />
-          </div>
+        {role === 'security_analyst' ? (
+          <Link
+            to="/settings?createAgent=true"
+            className="flex items-center gap-2 px-3 py-1.5 bg-[#1f2937] border border-[#2a2a3a] text-sm text-white rounded-md hover:bg-[#272f3f] transition-colors"
+            title="Create agent"
+          >
+            <Plus className="size-4" />
+            <span>Create Agent</span>
+          </Link>
+        ) : null}
 
-          <div className="text-left leading-tight">
-            <div className="text-sm text-white">{username}</div>
-            <div className="text-xs text-gray-500">{role.toUpperCase()}</div>
-          </div>
-        </button>
+        <DropdownMenu>
+          <DropdownMenuTrigger asChild>
+            <button
+              type="button"
+              className="flex items-center gap-3 px-3 py-1.5 hover:bg-[#1a1a24] transition-colors rounded-md"
+              title="User menu"
+            >
+              <div className="size-8 rounded-full bg-[#4f46e5] flex items-center justify-center shrink-0">
+                <User className="size-4 text-white" />
+              </div>
+
+              <div className="text-left leading-tight">
+                <div className="text-sm text-white">{username}</div>
+                <div className="text-xs text-gray-500">{role.toUpperCase()}</div>
+              </div>
+            </button>
+          </DropdownMenuTrigger>
+
+          <DropdownMenuContent align="end" className="border-[#1f1f2e] bg-[#0f0f17] text-white">
+            <DropdownMenuItem onClick={() => navigate('/profile')}>
+              Profile
+            </DropdownMenuItem>
+            <DropdownMenuSeparator className="bg-[#1f1f2e]" />
+            <DropdownMenuItem onClick={() => setLogoutDialogOpen(true)} className="text-[#ef4444]">
+              Logout
+            </DropdownMenuItem>
+          </DropdownMenuContent>
+        </DropdownMenu>
+
+        <AlertDialog open={logoutDialogOpen} onOpenChange={setLogoutDialogOpen}>
+          <AlertDialogContent>
+            <AlertDialogHeader>
+              <AlertDialogTitle>Confirm logout</AlertDialogTitle>
+              <AlertDialogDescription>
+                Are you sure you want to log out? You will need to sign in again to access the dashboard.
+              </AlertDialogDescription>
+            </AlertDialogHeader>
+            <AlertDialogFooter>
+              <AlertDialogCancel asChild>
+                <button className="px-3 py-2 bg-[#1a1a24] border border-[#2a2a3a] text-gray-300 hover:text-white rounded-md transition-colors">
+                  Cancel
+                </button>
+              </AlertDialogCancel>
+              <AlertDialogAction asChild>
+                <button
+                  type="button"
+                  onClick={() => void onLogout()}
+                  className="px-3 py-2 bg-[#ef4444] hover:bg-[#dc2626] text-white rounded-md transition-colors"
+                >
+                  Logout
+                </button>
+              </AlertDialogAction>
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        </AlertDialog>
       </div>
     </header>
   );

@@ -1,14 +1,16 @@
-import { 
-  LayoutDashboard, 
-  FileText, 
-  AlertTriangle, 
-  Shield, 
-  Settings, 
+import {
+  LayoutDashboard,
+  FileText,
+  AlertTriangle,
+  Shield,
+  Settings,
   FileBarChart,
   GitBranch,
   Cpu,
+  ShieldCheck,
 } from 'lucide-react';
 import type { SiemRole } from '../api/auth';
+import { canRoleAccessPage } from '../roleAccess';
 
 interface SidebarProps {
   currentPage: string;
@@ -20,38 +22,20 @@ const navItems = [
   { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard },
   { id: 'logs', label: 'Log Management', icon: FileText },
   { id: 'alerts-and-threats', label: 'Alerts & Threats', icon: AlertTriangle },
-  // { id: 'alerts', label: 'Alerts', icon: AlertTriangle },
-  // { id: 'threat-detection', label: 'Threat Detection', icon: Shield },
   { id: 'threat-intelligence', label: 'Threat Intelligence', icon: Shield },
   { id: 'detection-rules', label: 'Detection Rules', icon: GitBranch },
   { id: 'ai-recommendations', label: 'AI Assistant', icon: Cpu },
   { id: 'investigations', label: 'Investigations', icon: FileText },
   { id: 'reports', label: 'Reports', icon: FileBarChart },
+  { id: 'admin', label: 'Admin Console', icon: ShieldCheck },
   { id: 'settings', label: 'Settings', icon: Settings },
 ];
 
 export function Sidebar({ currentPage, onNavigate, role }: SidebarProps) {
-  const roleWeight: Record<SiemRole, number> = { security_analyst: 20, admin: 40 };
-  const minimumRoleByPage: Record<string, SiemRole> = {
-    dashboard: 'security_analyst',
-    logs: 'security_analyst',
-    // alerts: 'security_analyst',
-    // 'threat-detection': 'security_analyst',
-    'threat-intelligence': 'security_analyst',
-    'detection-rules': 'security_analyst',
-    'ai-recommendations': 'security_analyst',
-    reports: 'security_analyst',
-    settings: 'security_analyst',
-    'alerts-and-threats': 'security_analyst',
-  };
-
-  const allowedItems = navItems.filter(
-    (item) => roleWeight[role] >= roleWeight[minimumRoleByPage[item.id] ?? 'security_analyst'],
-  );
+  const allowedItems = navItems.filter((item) => canRoleAccessPage(role, item.id));
 
   return (
     <div className="w-64 bg-[#0f0f17] border-r border-[#1f1f2e] flex flex-col">
-      {/* Logo */}
       <div className="h-16 flex items-center px-6 border-b border-[#1f1f2e]">
         <Shield className="size-8 text-[#4f46e5]" />
         <div className="ml-3">
@@ -60,7 +44,6 @@ export function Sidebar({ currentPage, onNavigate, role }: SidebarProps) {
         </div>
       </div>
 
-      {/* Navigation */}
       <nav className="flex-1 py-6 px-3 overflow-y-auto">
         {allowedItems.map((item) => {
           const Icon = item.icon;
@@ -82,7 +65,6 @@ export function Sidebar({ currentPage, onNavigate, role }: SidebarProps) {
         })}
       </nav>
 
-      {/* Version Info */}
       <div className="p-4 border-t border-[#1f1f2e]">
         <div className="text-xs text-muted-foreground">
           <div>Version 2.4.1</div>

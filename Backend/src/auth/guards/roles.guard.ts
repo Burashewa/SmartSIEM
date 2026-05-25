@@ -3,11 +3,6 @@ import { Reflector } from '@nestjs/core';
 import { ROLES_KEY } from '../decorators/roles.decorator';
 import { SiemRole } from '../auth.types';
 
-const roleWeight: Record<SiemRole, number> = {
-  security_analyst: 20,
-  admin: 40,
-};
-
 @Injectable()
 export class RolesGuard implements CanActivate {
   constructor(private readonly reflector: Reflector) {}
@@ -25,9 +20,9 @@ export class RolesGuard implements CanActivate {
       throw new ForbiddenException('Role is required');
     }
 
-    const allowed = requiredRoles.some((requiredRole) => roleWeight[currentRole] >= roleWeight[requiredRole]);
+    const allowed = requiredRoles.includes(currentRole);
     if (!allowed) {
-      throw new ForbiddenException('Insufficient privileges');
+      throw new ForbiddenException('Insufficient privileges for your role');
     }
     return true;
   }

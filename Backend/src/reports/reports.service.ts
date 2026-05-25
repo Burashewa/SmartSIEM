@@ -44,7 +44,7 @@ export class ReportsService {
     const until = new Date();
     const since = new Date(until.getTime() - 24 * 60 * 60 * 1000);
     const alerts = await this.alertsService.findTriggeredInRange(user, since, until);
-    const baseMarkdown = this.buildMarkdown(user, since, until, alerts);
+    const baseMarkdown = this.buildMarkdown(until, alerts);
     const aiInsights = await this.reportAiEnrichmentService.enrichMarkdownReport(baseMarkdown);
     const markdown = aiInsights
       ? this.reportAiEnrichmentService.insertAiSection(
@@ -190,18 +190,11 @@ export class ReportsService {
     };
   }
 
-  private buildMarkdown(
-    user: AuthJwtPayload,
-    since: Date,
-    until: Date,
-    alerts: Alert[],
-  ): string {
+  private buildMarkdown(until: Date, alerts: Alert[]): string {
     const lines: string[] = [];
     lines.push('# SmartSIEM — Daily security report');
     lines.push('');
     lines.push(`- **Generated:** ${until.toISOString()}`);
-    lines.push(`- **Window:** ${since.toISOString()} → ${until.toISOString()}`);
-    lines.push(`- **Tenant user:** ${user.username} (${user.sub}), role ${user.role}`);
     lines.push(`- **Total alerts:** ${alerts.length}`);
     lines.push('');
 
@@ -287,10 +280,6 @@ export class ReportsService {
       lines.push('_No alerts in this period._');
     }
 
-    lines.push('---');
-    lines.push('');
-    lines.push('*This file is generated automatically. Configure malicious IPs via `MALICIOUS_IPS` and tune DoS/error thresholds in `rules.constants.ts` as needed.*');
-    lines.push('');
     return lines.join('\n');
   }
 }

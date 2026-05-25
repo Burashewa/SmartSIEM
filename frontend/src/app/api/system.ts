@@ -9,7 +9,7 @@ export interface SystemStatusResponse {
   };
   database: {
     connected: boolean;
-    state: 'disconnected' | 'connected' | 'connecting' | 'disconnecting';
+    state: 'disconnected' | 'Live' | 'connecting' | 'disconnecting';
     provider: string;
   };
   systemStatus: {

@@ -30,10 +30,15 @@ export interface BackendLogRecord {
   action?: string;
   status?: string;
   user?: string;
+  role?: string;
   ip?: string;
   endpoint?: string;
   method?: string;
   resource?: string | null;
+  deviceId?: string;
+  sessionId?: string;
+  userAgent?: string;
+  tags?: string[];
   latitude?: number;
   longitude?: number;
   payload?: Record<string, unknown>;

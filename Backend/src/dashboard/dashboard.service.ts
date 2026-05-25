@@ -2,6 +2,7 @@ import { Injectable } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model, Types } from 'mongoose';
 import { Alert } from '../alerts/alert.schema';
+import { Agent } from '../agents/agent.schema';
 import { Log } from '../logs/log.schema';
 import { AuthJwtPayload } from '../auth/auth.types';
 
@@ -35,6 +36,7 @@ export class DashboardService {
   constructor(
     @InjectModel(Log.name) private readonly logModel: Model<Log>,
     @InjectModel(Alert.name) private readonly alertModel: Model<Alert>,
+    @InjectModel(Agent.name) private readonly agentModel: Model<Agent>,
   ) {}
 
   /**
@@ -217,7 +219,7 @@ export class DashboardService {
     filter: Record<string, unknown>,
   ): Promise<AlertSeverityPoint[]> {
     const counts = await this.alertModel.aggregate<{ _id: string; value: number }>([
-      { $match: filter },
+      { $match: { ...filter, status: { $ne: 'false_positive' } } },
       {
         $group: {
           _id: {
@@ -245,26 +247,43 @@ export class DashboardService {
     end: Date,
     filter: Record<string, unknown>,
   ): Promise<EventsBySourcePoint[]> {
-    const rows = await this.logModel.aggregate<{ source: string; events: number }>([
+    const rows = await this.logModel.aggregate<{
+      source: string;
+      events: number;
+    }>([
       {
         $match: {
           ...filter,
           timestamp: { $gte: start, $lte: end },
-          source: { $exists: true, $nin: [null, ''] },
+          agentId: { $exists: true, $nin: [null, ''] },
         },
       },
       {
         $group: {
-          _id: '$source',
+          _id: '$agentId',
           events: { $sum: 1 },
         },
       },
       { $sort: { events: -1 } },
       { $limit: 6 },
       {
+        $lookup: {
+          from: 'agents',
+          localField: '_id',
+          foreignField: 'agentId',
+          as: 'agent',
+        },
+      },
+      {
+        $unwind: {
+          path: '$agent',
+          preserveNullAndEmptyArrays: false,
+        },
+      },
+      {
         $project: {
           _id: 0,
-          source: '$_id',
+          source: '$agent.name',
           events: 1,
         },
       },

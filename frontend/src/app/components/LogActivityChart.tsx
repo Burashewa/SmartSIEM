@@ -25,7 +25,7 @@ export function LogActivityChart({ data, isLoading = false }: LogActivityChartPr
   const total = data.reduce((sum, p) => sum + p.logs, 0);
   const hasBuckets = data.length > 0;
 
-  const yDomainMax = (_min: number, max: number) => {
+  const yDomainMax = (max: number) => {
     const m = Number(max);
     if (!Number.isFinite(m) || m <= 0) return 1;
     return Math.ceil(m * 1.08);
@@ -36,9 +36,9 @@ export function LogActivityChart({ data, isLoading = false }: LogActivityChartPr
       <div className="flex items-center justify-between mb-4 gap-4">
         <div>
           <h3 className="text-lg font-medium text-white">Real-time log activity</h3>
-          <p className="text-sm text-gray-400 mt-1">
+          {/* <p className="text-sm text-gray-400 mt-1">
             Volume from ingested logs (window adapts to your data; bucket size scales automatically)
-          </p>
+          </p> */}
         </div>
         <div className="flex flex-col items-end gap-0.5 shrink-0">
           <div className="flex items-center gap-2">
@@ -90,7 +90,7 @@ export function LogActivityChart({ data, isLoading = false }: LogActivityChartPr
                 color: '#f3f4f6',
               }}
               labelStyle={{ color: '#9ca3af', marginBottom: 4 }}
-              formatter={(value: number | undefined) => [
+              formatter={(value) => [
                 Number(value ?? 0).toLocaleString(),
                 'Logs in bucket',
               ]}

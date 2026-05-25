@@ -8,6 +8,7 @@ export interface AgentRecord {
   apiKeyStorageMode: AgentApiKeyStorageMode;
   storedApiKeyAvailable: boolean;
   apiKeyPreview: string;
+  allowedIps?: string[];
   createdAt?: string;
   updatedAt?: string;
 }
@@ -54,14 +55,26 @@ export async function fetchAgents(): Promise<AgentRecord[]> {
   return response.json() as Promise<AgentRecord[]>;
 }
 
+function parseAllowedIpsInput(raw: string): string[] | undefined {
+  const trimmed = raw.trim();
+  if (!trimmed) return undefined;
+  return [...new Set(trimmed.split(',').map((ip) => ip.trim()).filter(Boolean))];
+}
+
 export async function createAgent(
   name: string,
   storeApiKey: boolean,
+  allowedIpsInput = '',
 ): Promise<CreatedAgentRecord> {
+  const allowedIps = parseAllowedIpsInput(allowedIpsInput);
   const response = await authFetch('/api/agents', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ name, storeApiKey }),
+    body: JSON.stringify({
+      name,
+      storeApiKey,
+      ...(allowedIps?.length ? { allowedIps } : {}),
+    }),
   });
 
   if (!response.ok) {
@@ -95,4 +108,21 @@ export async function regenerateAgentApiKey(
   }
 
   return response.json() as Promise<CreatedAgentRecord>;
+}
+
+export async function updateAgent(
+  agentId: string,
+  body: { name?: string; allowedIps?: string[] },
+): Promise<AgentRecord> {
+  const response = await authFetch(`/api/agents/${encodeURIComponent(agentId)}`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  });
+
+  if (!response.ok) {
+    throw new Error(await readErrorMessage(response, `Failed to update agent (${response.status})`));
+  }
+
+  return response.json() as Promise<AgentRecord>;
 }

@@ -21,29 +21,69 @@ interface RefreshResponse {
   expiresInSec: number;
 }
 
-interface RegisterResponse {
+export interface RegisterResponse {
   ok: boolean;
   user: {
     username: string;
     role: SiemRole;
+    email?: string;
   };
+  message: string;
+  verificationEmailSent: boolean;
+}
+
+interface VerifyEmailResponse {
+  ok: boolean;
+  message: string;
+}
+
+interface ResendVerificationResponse {
+  message: string;
+  retryAfterSec?: number;
+}
+
+export class ResendVerificationError extends Error {
+  retryAfterSec: number;
+
+  constructor(message: string, retryAfterSec: number) {
+    super(message);
+    this.name = 'ResendVerificationError';
+    this.retryAfterSec = retryAfterSec;
+  }
+}
+
+interface ForgotPasswordResponse {
+  message: string;
+}
+
+interface ResetPasswordResponse {
+  ok: boolean;
+  message: string;
 }
 
 const AUTH_STORAGE_KEY = 'smartsiem.auth.tokens';
+// Client-side maximum session lifetime (ms). After this, require interactive login.
+const MAX_SESSION_MS = 24 * 60 * 60 * 1000; // 24 hours
 
-async function readErrorMessage(response: Response, fallback: string): Promise<string> {
+export async function readErrorMessage(response: Response, fallback: string): Promise<string> {
   try {
     const text = await response.text();
     if (!text) return fallback;
-    const body = JSON.parse(text) as { message?: string | string[] };
+    const body = JSON.parse(text) as {
+      message?: string | string[];
+      error?: string;
+    };
     if (Array.isArray(body.message)) {
-      return body.message.join(' ');
+      return body.message.join('. ');
     }
     if (typeof body.message === 'string' && body.message.trim()) {
       return body.message;
     }
+    if (typeof body.error === 'string' && body.error.trim()) {
+      return body.error;
+    }
   } catch {
-    // ignore
+    // ignore parse errors
   }
   return fallback;
 }
@@ -58,8 +98,14 @@ const readStoredSession = (): AuthSession | null => {
   try {
     const raw = window.localStorage.getItem(AUTH_STORAGE_KEY);
     if (!raw) return null;
-    const parsed = JSON.parse(raw) as Partial<AuthSession>;
+    const parsed = JSON.parse(raw) as Partial<AuthSession & { createdAt?: number }>;
     if (!parsed.accessToken || !parsed.refreshToken || !parsed.username || !parsed.role) return null;
+    const createdAt = parsed.createdAt ?? 0;
+    // If the stored session is older than our client-side max lifetime, clear it and require login
+    if (createdAt && Date.now() - createdAt > MAX_SESSION_MS) {
+      window.localStorage.removeItem(AUTH_STORAGE_KEY);
+      return null;
+    }
     return {
       accessToken: parsed.accessToken,
       refreshToken: parsed.refreshToken,
@@ -77,8 +123,29 @@ const writeStoredSession = (value: AuthSession | null): void => {
     window.localStorage.removeItem(AUTH_STORAGE_KEY);
     return;
   }
-  window.localStorage.setItem(AUTH_STORAGE_KEY, JSON.stringify(value));
+  // Preserve original createdAt (initial login time) if present, so refreshes don't extend lifetime
+  try {
+    const existingRaw = window.localStorage.getItem(AUTH_STORAGE_KEY);
+    const existing = existingRaw ? (JSON.parse(existingRaw) as { createdAt?: number }) : null;
+    const createdAt = existing?.createdAt ?? Date.now();
+    const toStore = { ...value, createdAt } as AuthSession & { createdAt: number };
+    window.localStorage.setItem(AUTH_STORAGE_KEY, JSON.stringify(toStore));
+  } catch {
+    const toStore = { ...value, createdAt: Date.now() } as AuthSession & { createdAt: number };
+    window.localStorage.setItem(AUTH_STORAGE_KEY, JSON.stringify(toStore));
+  }
 };
+
+function applyLoginResponse(data: LoginResponse): AuthSession {
+  const next: AuthSession = {
+    accessToken: data.accessToken,
+    refreshToken: data.refreshToken,
+    role: data.role,
+    username: data.username,
+  };
+  setSession(next);
+  return next;
+}
 
 export function getSession(): AuthSession | null {
   if (!session) {
@@ -99,41 +166,144 @@ export async function login(username: string, password: string): Promise<AuthSes
     body: JSON.stringify({ username, password }),
   });
   if (!response.ok) {
-    const msg = await readErrorMessage(
-      response,
-      `Login failed (${response.status})`,
-    );
-    throw new Error(msg);
+    throw new Error(await readErrorMessage(response, `Login failed (${response.status})`));
   }
   const data = (await response.json()) as LoginResponse;
-  const next: AuthSession = {
-    accessToken: data.accessToken,
-    refreshToken: data.refreshToken,
-    role: data.role,
-    username: data.username,
-  };
-  setSession(next);
-  return next;
+  return applyLoginResponse(data);
+}
+
+export async function loginWithGoogle(credential: string): Promise<AuthSession> {
+  const response = await fetch('/api/auth/google', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ credential }),
+  });
+  if (!response.ok) {
+    throw new Error(
+      await readErrorMessage(response, `Google sign-in failed (${response.status})`),
+    );
+  }
+  const data = (await response.json()) as LoginResponse;
+  return applyLoginResponse(data);
 }
 
 export async function register(
   username: string,
   password: string,
   role: SiemRole,
+  email?: string,
 ): Promise<RegisterResponse> {
   const response = await fetch('/api/auth/register', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ username, password, role }),
+    body: JSON.stringify({
+      username,
+      password,
+      role,
+      ...(email?.trim() ? { email: email.trim() } : {}),
+    }),
   });
   if (!response.ok) {
-    const msg = await readErrorMessage(
-      response,
-      `Registration failed (${response.status})`,
+    throw new Error(
+      await readErrorMessage(response, `Registration failed (${response.status})`),
     );
-    throw new Error(msg);
   }
   return (await response.json()) as RegisterResponse;
+}
+
+export async function verifyEmail(verificationId: string): Promise<VerifyEmailResponse> {
+  const response = await fetch('/api/auth/verify-email', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ verificationId }),
+  });
+  if (!response.ok) {
+    throw new Error(
+      await readErrorMessage(response, `Email verification failed (${response.status})`),
+    );
+  }
+  return (await response.json()) as VerifyEmailResponse;
+}
+
+export async function getVerificationStatus(
+  identifier: string,
+): Promise<{ found: boolean; verified: boolean; username?: string }> {
+  const response = await fetch('/api/auth/verification-status', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ identifier }),
+  });
+  if (!response.ok) {
+    throw new Error(
+      await readErrorMessage(response, `Could not check verification status (${response.status})`),
+    );
+  }
+  return (await response.json()) as { found: boolean; verified: boolean; username?: string };
+}
+
+export async function resendVerificationEmail(
+  identifier: string,
+): Promise<ResendVerificationResponse> {
+  const response = await fetch('/api/auth/resend-verification', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ identifier }),
+  });
+  if (!response.ok) {
+    let retryAfterSec = 60;
+    try {
+      const text = await response.text();
+      const body = JSON.parse(text) as { message?: string; retryAfterSec?: number };
+      if (typeof body.retryAfterSec === 'number' && body.retryAfterSec > 0) {
+        retryAfterSec = body.retryAfterSec;
+      }
+      const message =
+        typeof body.message === 'string' && body.message.trim()
+          ? body.message
+          : `Could not resend verification (${response.status})`;
+      throw new ResendVerificationError(message, retryAfterSec);
+    } catch (err) {
+      if (err instanceof ResendVerificationError) throw err;
+      throw new ResendVerificationError(
+        `Could not resend verification (${response.status})`,
+        retryAfterSec,
+      );
+    }
+  }
+  return (await response.json()) as ResendVerificationResponse;
+}
+
+export async function requestPasswordReset(
+  identifier: string,
+): Promise<ForgotPasswordResponse> {
+  const response = await fetch('/api/auth/forgot-password', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ identifier }),
+  });
+  if (!response.ok) {
+    throw new Error(
+      await readErrorMessage(response, `Password reset request failed (${response.status})`),
+    );
+  }
+  return (await response.json()) as ForgotPasswordResponse;
+}
+
+export async function resetPassword(
+  resetId: string,
+  password: string,
+): Promise<ResetPasswordResponse> {
+  const response = await fetch('/api/auth/reset-password', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ resetId, password }),
+  });
+  if (!response.ok) {
+    throw new Error(
+      await readErrorMessage(response, `Password reset failed (${response.status})`),
+    );
+  }
+  return (await response.json()) as ResetPasswordResponse;
 }
 
 async function refresh(): Promise<boolean> {
@@ -185,13 +355,20 @@ export function clearSession(): void {
   setSession(null);
 }
 
+/** Resolve API path; optional VITE_API_BASE_URL for production builds without Vite proxy. */
+export function apiPath(path: string): string {
+  const base = (import.meta.env.VITE_API_BASE_URL as string | undefined)?.replace(/\/$/, '') ?? '';
+  return `${base}${path.startsWith('/') ? path : `/${path}`}`;
+}
+
 export async function authFetch(input: string, init: RequestInit = {}): Promise<Response> {
+  const url = input.startsWith('/api') ? apiPath(input) : input;
   const current = getSession();
   const headers = new Headers(init.headers ?? {});
   if (current?.accessToken) {
     headers.set('Authorization', `Bearer ${current.accessToken}`);
   }
-  let response = await fetch(input, { ...init, headers });
+  let response = await fetch(url, { ...init, headers });
   if (response.status !== 401) return response;
 
   const refreshed = await ensureFreshSession();
@@ -201,6 +378,6 @@ export async function authFetch(input: string, init: RequestInit = {}): Promise<
   if (!latest?.accessToken) return response;
   const retryHeaders = new Headers(init.headers ?? {});
   retryHeaders.set('Authorization', `Bearer ${latest.accessToken}`);
-  response = await fetch(input, { ...init, headers: retryHeaders });
+  response = await fetch(url, { ...init, headers: retryHeaders });
   return response;
 }

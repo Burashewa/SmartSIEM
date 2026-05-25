@@ -11,6 +11,12 @@ async function bootstrap() {
   const configService = app.get(ConfigService);
   const port = Number(configService.get<string>('PORT') ?? 5001);
 
+  const trustProxy =
+    (configService.get<string>('TRUST_PROXY') ?? 'true').toLowerCase() === 'true';
+  if (trustProxy) {
+    app.getHttpAdapter().getInstance().set('trust proxy', 1);
+  }
+
   app.enableCors({
     origin: true,
     credentials: false,

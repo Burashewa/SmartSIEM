@@ -12,6 +12,7 @@ type AgentRequest = {
     agentId: string;
     name: string;
     userId: string;
+    allowedIps?: string[];
   };
 };
 

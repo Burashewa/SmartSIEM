@@ -372,7 +372,7 @@
               <label className="text-sm text-gray-400 mb-2 block">Severity Level</label>
               <select
                 value={severityFilter}
-                onChange={(e) => setSeverityFilter(e.target.value)}
+                onChange={(e) => setSeverityFilter(e.target.value as SeverityFilter)}
                 className="w-full bg-[#1a1a24] border border-[#2a2a3a] px-4 py-2.5 text-sm text-white focus:outline-none focus:border-[#4f46e5] transition-colors rounded"
               >
                 <option value="all">All Severities</option>
@@ -404,7 +404,7 @@
               <label className="text-sm text-gray-400 mb-2 block">Status</label>
               <select
                 value={statusFilter}
-                onChange={(e) => setStatusFilter(e.target.value)}
+                onChange={(e) => setStatusFilter(e.target.value as StatusFilter)}
                 className="w-full bg-[#1a1a24] border border-[#2a2a3a] px-4 py-2.5 text-sm text-white focus:outline-none focus:border-[#4f46e5] transition-colors rounded"
               >
                 <option value="all">All Statuses</option>

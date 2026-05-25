@@ -21,12 +21,12 @@ export function SystemStatus({
           <div className="size-2 rounded-full bg-[#10b981] animate-pulse" />
           <div className="absolute inset-0 size-2 rounded-full bg-[#10b981] animate-ping opacity-75" />
         </div>
-        <div className="flex items-baseline gap-1.5">
+        {/* <div className="flex items-baseline gap-1.5">
           <span className="text-xs text-gray-400">Ingestion Rate:</span>
           <span className="text-sm text-[#10b981] font-mono font-semibold tracking-tight">
             {displayRate}
           </span>
-        </div>
+        </div> */}
       </div>
 
       {/* Divider */}
@@ -36,11 +36,11 @@ export function SystemStatus({
       <div className="flex items-center gap-2">
         <Database className={`size-3.5 ${databaseConnected ? 'text-[#10b981]' : 'text-[#ef4444]'}`} />
         <div className="flex items-baseline gap-1.5">
-          <span className="text-xs text-gray-400">Database:</span>
+          <span className="text-xs text-gray-400">Connectivity:</span>
           <span className={`text-sm font-mono font-semibold tracking-tight ${
             databaseConnected ? 'text-[#10b981]' : 'text-[#ef4444]'
           }`}>
-            {databaseConnected ? 'Connected' : 'Disconnected'}
+            {databaseConnected ? 'Live' : 'Offline'}
           </span>
           <span className="text-xs text-gray-500 font-mono">
             ({databaseProvider})

@@ -1,12 +1,36 @@
 import { useEffect, useMemo, useReducer, useState } from 'react';
 import {
-  Search,
   Filter,
   ChevronDown,
   ChevronRight,
   Trash2,
 } from 'lucide-react';
 import { fetchLogs, deleteLog, type BackendLogRecord } from '../api/dashboard';
+import { fetchAgents, type AgentRecord } from '../api/agents';
+
+interface LogDetails {
+  eventId?: string;
+  agentId?: string;
+  userId?: string;
+  event?: string;
+  action?: string;
+  status?: string;
+  user?: string;
+  role?: string;
+  ip?: string;
+  endpoint?: string;
+  method?: string;
+  resource?: string | null;
+  deviceId?: string;
+  sessionId?: string;
+  userAgent?: string;
+  latitude?: number;
+  longitude?: number;
+  tags?: string[];
+  payload?: Record<string, unknown>;
+  metadata?: Record<string, unknown>;
+  raw?: Record<string, unknown>;
+}
 
 interface LogEntry {
   id: string;
@@ -14,48 +38,27 @@ interface LogEntry {
   level: string;
   source: string;
   message: string;
-  details: Record<string, unknown>;
+  details: LogDetails;
 }
 
-type LogicalOp = 'AND' | 'OR';
-
 interface FilterState {
-  search: string;
-  level: 'all' | string;
-  sources: string[];
-  users: string[];
-  ips: string[];
-  logicalOp: LogicalOp;
+  ip: string;
+  agent: string;
 }
 
 type FilterAction =
-  | { type: 'SET_FILTER'; key: keyof FilterState; value: string | LogicalOp }
-  | { type: 'TOGGLE_ARRAY_FILTER'; key: 'sources' | 'users' | 'ips'; value: string }
+  | { type: 'SET_FILTER'; key: keyof FilterState; value: string }
   | { type: 'RESET' };
 
 const defaultFilters: FilterState = {
-  search: '',
-  level: 'all',
-  sources: [],
-  users: [],
-  ips: [],
-  logicalOp: 'AND',
+  ip: '',
+  agent: '',
 };
 
 function filterReducer(state: FilterState, action: FilterAction): FilterState {
   switch (action.type) {
     case 'SET_FILTER':
       return { ...state, [action.key]: action.value };
-
-    case 'TOGGLE_ARRAY_FILTER': {
-      const arr = state[action.key];
-      return {
-        ...state,
-        [action.key]: arr.includes(action.value)
-          ? arr.filter((v) => v !== action.value)
-          : [...arr, action.value],
-      };
-    }
 
     case 'RESET':
       return defaultFilters;
@@ -79,22 +82,172 @@ const normalizeLog = (log: BackendLogRecord): LogEntry => {
       log.message ??
       (messageParts.length > 0 ? messageParts.join(' ') : log.event),
     details: {
+      eventId: log.event_id,
       agentId: log.agentId,
-      userId: log.userId,
+      userId: log.userId ? String(log.userId) : undefined,
       event: log.event,
       action: log.action,
       status: log.status,
       user: log.user,
+      role: log.role,
       ip: log.ip,
       endpoint: log.endpoint,
       resource: log.resource,
       method: log.method,
+      deviceId: log.deviceId,
+      sessionId: log.sessionId,
+      userAgent: log.userAgent,
+      latitude: log.latitude,
+      longitude: log.longitude,
+      tags: log.tags,
       payload: log.payload,
       metadata: log.metadata,
       raw: log.raw,
     },
   };
 };
+
+const ROW_SUMMARY_KEYS = new Set([
+  'timestamp',
+  'level',
+  'source',
+  'message',
+  'severity',
+  'id',
+]);
+
+const NESTED_CONTAINER_KEYS = new Set(['payload', 'metadata', 'raw']);
+
+function normalizeDetailKey(key: string): string {
+  return key.toLowerCase().replace(/[_-]/g, '');
+}
+
+function isEmptyValue(value: unknown): boolean {
+  if (value == null || value === '') return true;
+  if (Array.isArray(value) && value.length === 0) return true;
+  if (
+    typeof value === 'object' &&
+    !Array.isArray(value) &&
+    Object.keys(value as object).length === 0
+  ) {
+    return true;
+  }
+  return false;
+}
+
+function isMessageDerived(log: LogEntry): boolean {
+  const { event, action, status } = log.details;
+  const parts = [event, action, status]
+    .filter(Boolean)
+    .map((part) => String(part).replace(/_/g, ' '));
+
+  if (parts.length === 0) return false;
+  return log.message.trim() === parts.join(' ');
+}
+
+function mergeUniqueFields(
+  target: Record<string, unknown>,
+  seen: Set<string>,
+  exclude: Set<string>,
+  source?: Record<string, unknown>,
+) {
+  if (!source) return;
+
+  for (const [key, value] of Object.entries(source)) {
+    const norm = normalizeDetailKey(key);
+    if (exclude.has(norm) || NESTED_CONTAINER_KEYS.has(norm) || seen.has(norm)) {
+      continue;
+    }
+    if (isEmptyValue(value)) continue;
+
+    if (typeof value === 'object' && value !== null && !Array.isArray(value)) {
+      for (const [nestedKey, nestedValue] of Object.entries(value)) {
+        const nestedNorm = normalizeDetailKey(nestedKey);
+        if (exclude.has(nestedNorm) || seen.has(nestedNorm) || isEmptyValue(nestedValue)) {
+          continue;
+        }
+        if (
+          typeof nestedValue === 'object' &&
+          nestedValue !== null &&
+          !Array.isArray(nestedValue)
+        ) {
+          continue;
+        }
+        seen.add(nestedNorm);
+        target[nestedKey] = nestedValue;
+      }
+      continue;
+    }
+
+    seen.add(norm);
+    target[key] = value;
+  }
+}
+
+function buildCleanLogJson(
+  log: LogEntry,
+  agentName?: string,
+): Record<string, unknown> {
+  const clean: Record<string, unknown> = {};
+  const seen = new Set<string>();
+  const exclude = new Set(ROW_SUMMARY_KEYS);
+
+  if (isMessageDerived(log)) {
+    exclude.add('event');
+    exclude.add('action');
+    exclude.add('status');
+  }
+
+  const assign = (key: string, value: unknown) => {
+    if (isEmptyValue(value)) return;
+    const norm = normalizeDetailKey(key);
+    if (exclude.has(norm) || seen.has(norm)) return;
+    seen.add(norm);
+    clean[key] = value;
+  };
+
+  if (log.details.agentId) {
+    const agent: Record<string, unknown> = { id: log.details.agentId };
+    if (agentName) agent.name = agentName;
+    assign('agent', agent);
+  }
+
+  const scalarKeys: Array<keyof LogDetails> = [
+    'eventId',
+    'userId',
+    'user',
+    'role',
+    'ip',
+    'endpoint',
+    'method',
+    'resource',
+    'deviceId',
+    'sessionId',
+    'userAgent',
+    'tags',
+  ];
+
+  if (!isMessageDerived(log)) {
+    scalarKeys.unshift('event', 'action', 'status');
+  }
+
+  for (const key of scalarKeys) {
+    assign(key, log.details[key]);
+  }
+
+  if (log.details.latitude != null || log.details.longitude != null) {
+    assign('location', {
+      latitude: log.details.latitude ?? null,
+      longitude: log.details.longitude ?? null,
+    });
+  }
+
+  mergeUniqueFields(clean, seen, exclude, log.details.payload);
+  mergeUniqueFields(clean, seen, exclude, log.details.metadata);
+  mergeUniqueFields(clean, seen, exclude, log.details.raw);
+
+  return clean;
+}
 
 export function LogManagementPage() {
   const [logs, setLogs] = useState<LogEntry[]>([]);
@@ -108,6 +261,8 @@ export function LogManagementPage() {
     null,
   );
   const [bulkDeleteFailedIds, setBulkDeleteFailedIds] = useState<string[]>([]);
+  const [agents, setAgents] = useState<AgentRecord[]>([]);
+  const [isAgentsLoading, setIsAgentsLoading] = useState(true);
 
   const [filters, dispatch] = useReducer(filterReducer, defaultFilters, (init) => {
     if (typeof window === 'undefined') return init;
@@ -115,21 +270,44 @@ export function LogManagementPage() {
     const params = new URLSearchParams(window.location.search);
 
     return {
-      search: params.get('search') ?? init.search,
-      level: params.get('level') ?? init.level,
-      sources: params.get('sources')?.split(',').filter(Boolean) ?? init.sources,
-      users: params.get('users')?.split(',').filter(Boolean) ?? init.users,
-      ips: params.get('ips')?.split(',').filter(Boolean) ?? init.ips,
-      logicalOp: (params.get('logicalOp') as LogicalOp) ?? init.logicalOp,
+      ip: params.get('ip') ?? init.ip,
+      agent: params.get('agent') ?? init.agent,
     };
   });
 
-  const [debouncedSearch, setDebouncedSearch] = useState(filters.search);
+  const [currentPage, setCurrentPage] = useState(1);
+  const pageSize = 10;
+  const [debouncedIp, setDebouncedIp] = useState(filters.ip);
 
   useEffect(() => {
-    const t = setTimeout(() => setDebouncedSearch(filters.search), 350);
+    const t = setTimeout(() => setDebouncedIp(filters.ip), 350);
     return () => clearTimeout(t);
-  }, [filters.search]);
+  }, [filters.ip]);
+
+  useEffect(() => {
+    let isMounted = true;
+
+    const loadAgents = async () => {
+      setIsAgentsLoading(true);
+      try {
+        const response = await fetchAgents();
+        if (!isMounted) return;
+        setAgents(
+          [...response].sort((a, b) => a.name.localeCompare(b.name, undefined, { sensitivity: 'base' })),
+        );
+      } catch {
+        if (!isMounted) return;
+        setAgents([]);
+      } finally {
+        if (isMounted) setIsAgentsLoading(false);
+      }
+    };
+
+    void loadAgents();
+    return () => {
+      isMounted = false;
+    };
+  }, []);
 
   useEffect(() => {
     let isMounted = true;
@@ -158,14 +336,15 @@ export function LogManagementPage() {
   useEffect(() => {
     const params = new URLSearchParams();
 
-    params.set('search', filters.search);
-    params.set('level', filters.level);
-    params.set('sources', filters.sources.join(','));
-    params.set('users', filters.users.join(','));
-    params.set('ips', filters.ips.join(','));
-    params.set('logicalOp', filters.logicalOp);
+    if (filters.ip) params.set('ip', filters.ip);
+    if (filters.agent) params.set('agent', filters.agent);
 
-    window.history.replaceState(null, '', `?${params.toString()}`);
+    const query = params.toString();
+    window.history.replaceState(
+      null,
+      '',
+      query ? `?${query}` : window.location.pathname,
+    );
   }, [filters]);
 
   useEffect(() => {
@@ -175,47 +354,37 @@ export function LogManagementPage() {
   }, [singleDeleteErrorToast]);
 
   const filteredLogs = useMemo(() => {
-    const q = debouncedSearch.trim().toLowerCase();
-
-    const matchArray = (field: string, selected: string[]) =>
-      selected.length === 0 || selected.includes(field);
+    const ipQuery = debouncedIp.trim().toLowerCase();
+    const selectedAgentId = filters.agent.trim();
 
     return logs.filter((log) => {
-      const levelOk =
-        filters.level === 'all' || log.level === filters.level.toUpperCase();
+      const logIp = String(log.details.ip ?? '').toLowerCase();
+      const logAgentId = String(log.details.agentId ?? '');
 
-      const sourceOk = matchArray(log.source, filters.sources);
+      const ipOk = !ipQuery || logIp.includes(ipQuery);
+      const agentOk =
+        !selectedAgentId || logAgentId === selectedAgentId;
 
-      const userOk =
-        filters.users.length === 0 ||
-        filters.users.includes(String(log.details.userId ?? ''));
-
-      const ipOk =
-        filters.ips.length === 0 ||
-        filters.ips.includes(String(log.details.ip ?? ''));
-
-      const searchOk =
-        !q ||
-        [
-          log.timestamp,
-          log.level,
-          log.source,
-          log.message,
-          JSON.stringify(log.details),
-        ]
-          .join(' ')
-          .toLowerCase()
-          .includes(q);
-
-      const checks = [levelOk, sourceOk, userOk, ipOk, searchOk];
-
-      return filters.logicalOp === 'AND'
-        ? checks.every(Boolean)
-        : checks.some(Boolean);
+      return ipOk && agentOk;
     });
-  }, [logs, filters, debouncedSearch]);
+  }, [logs, debouncedIp, filters.agent]);
+
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [filters.ip, filters.agent]);
+
+  const pageCount = Math.max(1, Math.ceil(filteredLogs.length / pageSize));
+  const paginatedLogs = useMemo(() => {
+    const start = (currentPage - 1) * pageSize;
+    return filteredLogs.slice(start, start + pageSize);
+  }, [filteredLogs, currentPage]);
 
   const visibleIds = useMemo(() => filteredLogs.map((log) => log.id), [filteredLogs]);
+
+  const agentNameById = useMemo(
+    () => Object.fromEntries(agents.map((agent) => [agent.agentId, agent.name])),
+    [agents],
+  );
 
   const selectedCount = selectedIds.size;
 
@@ -229,23 +398,6 @@ export function LogManagementPage() {
     [visibleIds, selectedIds],
   );
 
-  const uniqueSources = useMemo(
-    () => Array.from(new Set(logs.map((l) => l.source))),
-    [logs],
-  );
-
-  const uniqueUsers = useMemo(
-    () =>
-      Array.from(
-        new Set(logs.map((l) => String(l.details.userId ?? 'unknown'))),
-      ),
-    [logs],
-  );
-
-  const uniqueIps = useMemo(
-    () => Array.from(new Set(logs.map((l) => String(l.details.ip ?? 'unknown')))),
-    [logs],
-  );
 
   const getLevelColor = (level: string) => {
     switch (level) {
@@ -394,45 +546,49 @@ export function LogManagementPage() {
           Log Management
         </h2>
 
-        {/* Search */}
-        <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-          <div className="md:col-span-2">
-            <label className="text-sm text-gray-400">Search (KQL-style)</label>
-            <div className="relative mt-2">
-              <Search className="absolute left-3 top-1/2 -translate-y-1/2 size-4 text-gray-500" />
-              <input
-                value={filters.search}
-                onChange={(e) =>
-                  dispatch({
-                    type: 'SET_FILTER',
-                    key: 'search',
-                    value: e.target.value,
-                  })
-                }
-                className="w-full bg-[#1a1a24] border border-[#2a2a3a] pl-10 pr-4 py-2 text-sm text-white"
-                placeholder="event:auth AND ip:192.168..."
-              />
-            </div>
-          </div>
-
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
           <div>
-            <label className="text-sm text-gray-400">Level</label>
-            <select
-              value={filters.level}
+            <label className="text-sm text-gray-400">IP address</label>
+            <input
+              value={filters.ip}
               onChange={(e) =>
                 dispatch({
                   type: 'SET_FILTER',
-                  key: 'level',
+                  key: 'ip',
                   value: e.target.value,
                 })
               }
               className="w-full mt-2 bg-[#1a1a24] border border-[#2a2a3a] px-3 py-2 text-sm text-white"
+              placeholder="192.168.1.10"
+            />
+          </div>
+
+          <div>
+            <label className="text-sm text-gray-400">Agent</label>
+            <select
+              value={filters.agent}
+              disabled={isAgentsLoading}
+              onChange={(e) =>
+                dispatch({
+                  type: 'SET_FILTER',
+                  key: 'agent',
+                  value: e.target.value,
+                })
+              }
+              className="w-full mt-2 bg-[#1a1a24] border border-[#2a2a3a] px-3 py-2 text-sm text-white disabled:opacity-50"
             >
-              <option value="all">ALL</option>
-              <option value="ERROR">ERROR</option>
-              <option value="WARN">WARN</option>
-              <option value="INFO">INFO</option>
-              <option value="DEBUG">DEBUG</option>
+              <option value="">
+                {isAgentsLoading ? 'Loading agents...' : 'All agents'}
+              </option>
+              {filters.agent &&
+                !agents.some((agent) => agent.agentId === filters.agent) && (
+                  <option value={filters.agent}>{filters.agent} (unavailable)</option>
+                )}
+              {agents.map((agent) => (
+                <option key={agent.agentId} value={agent.agentId}>
+                  {agent.name} ({agent.agentId})
+                </option>
+              ))}
             </select>
           </div>
 
@@ -447,101 +603,6 @@ export function LogManagementPage() {
           </div>
         </div>
 
-        {/* Advanced SIEM filters */}
-        <div className="mt-6 grid grid-cols-1 md:grid-cols-4 gap-4">
-          <div>
-            <label className="text-sm text-gray-400">Sources</label>
-            <div className="mt-2 max-h-32 overflow-auto border border-[#2a2a3a]">
-              {uniqueSources.map((s) => (
-                <button
-                  key={s}
-                  onClick={() =>
-                    dispatch({
-                      type: 'TOGGLE_ARRAY_FILTER',
-                      key: 'sources',
-                      value: s,
-                    })
-                  }
-                  className={`block w-full text-left px-3 py-1 text-sm ${
-                    filters.sources.includes(s)
-                      ? 'bg-[#4f46e5] text-white'
-                      : 'text-gray-300'
-                  }`}
-                >
-                  {s}
-                </button>
-              ))}
-            </div>
-          </div>
-
-          <div>
-            <label className="text-sm text-gray-400">Users</label>
-            <div className="mt-2 max-h-32 overflow-auto border border-[#2a2a3a]">
-              {uniqueUsers.map((u) => (
-                <button
-                  key={u}
-                  onClick={() =>
-                    dispatch({
-                      type: 'TOGGLE_ARRAY_FILTER',
-                      key: 'users',
-                      value: u,
-                    })
-                  }
-                  className={`block w-full text-left px-3 py-1 text-sm ${
-                    filters.users.includes(u)
-                      ? 'bg-[#4f46e5] text-white'
-                      : 'text-gray-300'
-                  }`}
-                >
-                  {u}
-                </button>
-              ))}
-            </div>
-          </div>
-
-          <div>
-            <label className="text-sm text-gray-400">IPs</label>
-            <div className="mt-2 max-h-32 overflow-auto border border-[#2a2a3a]">
-              {uniqueIps.map((ip) => (
-                <button
-                  key={ip}
-                  onClick={() =>
-                    dispatch({
-                      type: 'TOGGLE_ARRAY_FILTER',
-                      key: 'ips',
-                      value: ip,
-                    })
-                  }
-                  className={`block w-full text-left px-3 py-1 text-sm ${
-                    filters.ips.includes(ip)
-                      ? 'bg-[#4f46e5] text-white'
-                      : 'text-gray-300'
-                  }`}
-                >
-                  {ip}
-                </button>
-              ))}
-            </div>
-          </div>
-
-          <div>
-            <label className="text-sm text-gray-400">Logic</label>
-            <select
-              value={filters.logicalOp}
-              onChange={(e) =>
-                dispatch({
-                  type: 'SET_FILTER',
-                  key: 'logicalOp',
-                  value: e.target.value,
-                })
-              }
-              className="w-full mt-2 bg-[#1a1a24] border border-[#2a2a3a] px-3 py-2 text-sm text-white"
-            >
-              <option value="AND">AND (strict)</option>
-              <option value="OR">OR (flexible)</option>
-            </select>
-          </div>
-        </div>
       </div>
 
       {/* RESULTS */}
@@ -587,7 +648,7 @@ export function LogManagementPage() {
             ? Array.from({ length: 4 }).map((_, i) => (
                 <div key={i} className="px-6 py-5 animate-pulse bg-[#1a1a24]" />
               ))
-            : filteredLogs.map((log) => (
+            : paginatedLogs.map((log) => (
                 <div key={log.id}>
                   <div
                     className="group relative px-6 py-4 cursor-pointer hover:bg-[#1a1a24]"
@@ -668,14 +729,51 @@ export function LogManagementPage() {
                   </div>
 
                   {selectedLog === log.id && (
-                    <div className="px-6 pb-4">
-                      <pre className="text-xs text-green-400 bg-black p-3 overflow-x-auto">
-                        {JSON.stringify(log.details, null, 2)}
+                    <div className="px-6 pb-4 pl-14">
+                      <pre className="overflow-x-auto rounded border border-[#1f1f2e] bg-black p-3 text-xs leading-relaxed text-green-400">
+                        {JSON.stringify(
+                          buildCleanLogJson(
+                            log,
+                            log.details.agentId
+                              ? agentNameById[String(log.details.agentId)]
+                              : undefined,
+                          ),
+                          null,
+                          2,
+                        )}
                       </pre>
                     </div>
                   )}
                 </div>
               ))}
+        </div>
+
+        <div className="px-6 py-4 border-t border-[#1f1f2e] flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between text-sm text-gray-300">
+          <div>
+            Showing {filteredLogs.length === 0 ? 0 : (currentPage - 1) * pageSize + 1}–
+            {filteredLogs.length === 0 ? 0 : Math.min(currentPage * pageSize, filteredLogs.length)} of {filteredLogs.length} logs
+          </div>
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              disabled={currentPage <= 1}
+              onClick={() => setCurrentPage((page) => Math.max(1, page - 1))}
+              className="px-3 py-2 text-sm border border-[#2a2a3a] text-gray-200 disabled:opacity-50"
+            >
+              Previous
+            </button>
+            <span className="text-gray-400">
+              Page {currentPage} of {pageCount}
+            </span>
+            <button
+              type="button"
+              disabled={currentPage >= pageCount}
+              onClick={() => setCurrentPage((page) => Math.min(pageCount, page + 1))}
+              className="px-3 py-2 text-sm border border-[#2a2a3a] text-gray-200 disabled:opacity-50"
+            >
+              Next
+            </button>
+          </div>
         </div>
       </div>
 

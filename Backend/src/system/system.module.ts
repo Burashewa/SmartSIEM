@@ -14,5 +14,6 @@ import { SystemService } from './system.service';
   ],
   controllers: [SystemController],
   providers: [SystemService],
+  exports: [SystemService],
 })
 export class SystemModule {}
