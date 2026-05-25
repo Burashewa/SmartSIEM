@@ -1,5 +1,5 @@
 import { Code2, Copy, CheckCircle } from "lucide-react";
-
+import { Link } from "react-router-dom";
 import { useState } from "react";
 
 export function DeveloperIntegration() {
@@ -45,6 +45,11 @@ Content-Type: application/json
 
               <p className="text-lg text-gray-400 mb-8 leading-relaxed">
                 Send security events to SmartSIEM with a simple REST API and agent API keys — any language or platform.
+                Node.js teams: see the full{' '}
+                <Link to="/docs?section=node-integration" className="text-indigo-400 hover:text-indigo-300 underline">
+                  Node.js Integration guide
+                </Link>
+                .
               </p>
 
               <div className="space-y-4">
