@@ -3,6 +3,7 @@ import {
   Injectable,
   Logger,
   NotFoundException,
+  ServiceUnavailableException,
   UnauthorizedException,
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
@@ -14,11 +15,17 @@ import { Model, Types } from 'mongoose';
 import { AuthUser } from './schemas/user.schema';
 import { AuthSession } from './schemas/session.schema';
 import { AuthEvent } from './schemas/auth-event.schema';
+import {
+  BOOTSTRAP_ADMIN_PASSWORD_DEFAULT,
+  BOOTSTRAP_ADMIN_USERNAME,
+  isReservedUsername,
+} from './auth.constants';
 import { AuthJwtPayload, normalizeLegacyRole, SIEM_ROLES, SiemRole } from './auth.types';
 import { MailService } from '../mail/mail.service';
-
-const MIN_PASSWORD_LENGTH = 8;
+import { PasswordResetRateLimiter } from './password-reset-rate-limiter.service';
+import { passwordPolicyErrorMessage } from './password-policy';
 const PASSWORD_RESET_EXPIRES_MINUTES = 60;
+const EMAIL_VERIFICATION_EXPIRES_HOURS = 24;
 
 type AuthRequestContext = {
   sourceIp?: string;
@@ -40,6 +47,7 @@ export class AuthService {
     private readonly jwtService: JwtService,
     private readonly configService: ConfigService,
     private readonly mailService: MailService,
+    private readonly passwordResetRateLimiter: PasswordResetRateLimiter,
   ) {
     this.accessTokenTtlSec = Number(this.configService.get<string>('JWT_ACCESS_TTL_SEC') ?? 900);
     this.refreshTokenTtlSec = Number(this.configService.get<string>('JWT_REFRESH_TTL_SEC') ?? 604800);
@@ -48,17 +56,73 @@ export class AuthService {
   }
 
   async ensureBootstrapAdmin(): Promise<void> {
-    const users = await this.authUserModel.countDocuments();
-    if (users > 0) return;
-    const username = (this.configService.get<string>('BOOTSTRAP_ADMIN_USERNAME') ?? 'admin').toLowerCase();
-    const password = this.configService.get<string>('BOOTSTRAP_ADMIN_PASSWORD') ?? 'ChangeMe!123';
+    const username = (
+      this.configService.get<string>('BOOTSTRAP_ADMIN_USERNAME') ?? BOOTSTRAP_ADMIN_USERNAME
+    )
+      .trim()
+      .toLowerCase();
+    const password =
+      this.configService.get<string>('BOOTSTRAP_ADMIN_PASSWORD') ??
+      BOOTSTRAP_ADMIN_PASSWORD_DEFAULT;
+
+    const syncPassword =
+      (this.configService.get<string>('BOOTSTRAP_ADMIN_SYNC_PASSWORD') ?? 'true').toLowerCase() ===
+      'true';
+
+    const existing = await this.authUserModel.findOne({ username });
+    if (existing) {
+      if (existing.role !== 'admin') {
+        this.logger.warn(
+          `Bootstrap skipped: user "${username}" exists but is not an admin (role=${existing.role}).`,
+        );
+        return;
+      }
+
+      let updated = false;
+      if (syncPassword && !this.verifyPassword(password, existing.passwordHash)) {
+        existing.passwordHash = this.hashPassword(password);
+        existing.passwordChangedAt = new Date();
+        updated = true;
+      }
+      if (!existing.emailVerified) {
+        existing.emailVerified = true;
+        existing.emailVerifiedAt = new Date();
+        updated = true;
+      }
+      if ((existing.failedLoginAttempts ?? 0) > 0 || existing.lockedUntil) {
+        existing.failedLoginAttempts = 0;
+        existing.lockedUntil = undefined;
+        updated = true;
+      }
+      if (existing.authProvider !== 'local' || !existing.passwordHash) {
+        existing.authProvider = 'local';
+        if (!existing.passwordHash && syncPassword) {
+          existing.passwordHash = this.hashPassword(password);
+          existing.passwordChangedAt = new Date();
+        }
+        updated = true;
+      }
+
+      if (updated) {
+        await existing.save();
+        this.logger.log(
+          `Bootstrap admin "${username}" updated (password sync, unlock, or verification flags)`,
+        );
+      } else {
+        this.logger.log(`Bootstrap admin "${username}" already exists`);
+      }
+      return;
+    }
+
     await this.createUser({
       username,
       password,
       role: 'admin',
       actor: 'system-bootstrap',
       sourceIp: '127.0.0.1',
+      emailVerified: true,
     });
+    this.logger.log(`Bootstrap admin "${username}" created on startup`);
   }
 
   async createUser(input: {
@@ -68,12 +132,15 @@ export class AuthService {
     actor: string;
     sourceIp?: string;
     email?: string;
+    emailVerified?: boolean;
   }): Promise<{ username: string; role: SiemRole; email?: string }> {
     const username = input.username.trim().toLowerCase();
-    if (!username || input.password.length < MIN_PASSWORD_LENGTH) {
-      throw new BadRequestException(
-        `Password must be at least ${MIN_PASSWORD_LENGTH} characters`,
-      );
+    if (!username) {
+      throw new BadRequestException('Username is required');
+    }
+    const passwordError = passwordPolicyErrorMessage(input.password);
+    if (passwordError) {
+      throw new BadRequestException(passwordError);
     }
     if (!SIEM_ROLES.includes(input.role)) {
       throw new BadRequestException(
@@ -90,6 +157,8 @@ export class AuthService {
     }
 
     const passwordHash = this.hashPassword(input.password);
+    const emailVerified =
+      input.emailVerified !== undefined ? input.emailVerified : input.role === 'admin';
     const user = await this.authUserModel.create({
       username,
       email,
@@ -97,6 +166,8 @@ export class AuthService {
       authProvider: 'local',
       role: input.role,
       passwordChangedAt: new Date(),
+      emailVerified: Boolean(emailVerified),
+      ...(emailVerified ? { emailVerifiedAt: new Date() } : {}),
     });
     await this.logEvent({
       userId: user._id as Types.ObjectId,
@@ -117,7 +188,13 @@ export class AuthService {
     email?: string;
     sourceIp?: string;
     userAgent?: string;
-  }): Promise<{ username: string; role: SiemRole; email?: string }> {
+  }): Promise<{
+    username: string;
+    role: SiemRole;
+    email?: string;
+    message: string;
+    verificationEmailSent: boolean;
+  }> {
     const allowedInviteCode = this.configService.get<string>('AUTH_SELF_REGISTER_INVITE_CODE');
     const inviteCodeEnabled = Boolean(allowedInviteCode && allowedInviteCode.trim().length > 0);
     if (inviteCodeEnabled) {
@@ -125,25 +202,52 @@ export class AuthService {
         'Self-registration is disabled: set AUTH_SELF_REGISTER_INVITE_CODE in .env to empty, or use invite flow.',
       );
     }
-    if (!input.role || !SIEM_ROLES.includes(input.role)) {
+    const normalizedUsername = input.username.trim().toLowerCase();
+    if (isReservedUsername(normalizedUsername)) {
       throw new BadRequestException(
-        `Invalid role. Use one of: ${SIEM_ROLES.join(', ')}`,
+        'This username is reserved. Admin accounts cannot be created via registration.',
       );
     }
     if (input.role === 'admin') {
       throw new BadRequestException(
-        'Admin accounts can only be created by an existing administrator.',
+        'Admin accounts cannot be registered. Sign in with an existing admin account or contact your administrator.',
       );
+    }
+
+    const email = this.normalizeEmail(input.email);
+    if (!email) {
+      throw new BadRequestException('A valid email address is required to register as a security analyst.');
     }
 
     const user = await this.createUser({
       username: input.username,
       password: input.password,
       role: 'security_analyst',
-      email: input.email,
+      email,
       actor: 'self-register',
       sourceIp: input.sourceIp,
+      emailVerified: false,
     });
+
+    const verificationEmailSent = await this.issueEmailVerification(
+      user.username,
+      input.sourceIp ?? '',
+    );
+
+    if (!verificationEmailSent) {
+      this.logger.error(
+        `Verification email was not sent for ${user.username}. Check SMTP settings and backend logs.`,
+      );
+    } else {
+      const cooldownSec = Number(
+        this.configService.get<string>('AUTH_EMAIL_VERIFY_RESEND_COOLDOWN_SEC') ?? 60,
+      );
+      this.passwordResetRateLimiter.recordCooldown(
+        'verify-resend',
+        `id:${PasswordResetRateLimiter.hashIdentifier(email)}`,
+        cooldownSec * 1000,
+      );
+    }
 
     await this.logEvent({
       username: user.username,
@@ -151,10 +255,18 @@ export class AuthService {
       outcome: 'success',
       sourceIp: input.sourceIp ?? '',
       userAgent: input.userAgent ?? '',
-      metadata: { role: user.role },
+      metadata: { role: user.role, email },
     });
 
-    return user;
+    return {
+      username: user.username,
+      role: user.role,
+      email: user.email,
+      message: verificationEmailSent
+        ? 'Account created. Check your email for a verification link before signing in.'
+        : 'Account created. Email verification could not be sent — use Resend verification on the sign-in page.',
+      verificationEmailSent,
+    };
   }
 
   async setUserActiveStatus(input: {
@@ -213,6 +325,21 @@ export class AuthService {
       throw new UnauthorizedException('This account uses Google sign-in. Use Continue with Google.');
     }
 
+    if (this.mustVerifyEmailBeforeLogin(user)) {
+      await this.logEvent({
+        userId: user._id as Types.ObjectId,
+        username: user.username,
+        action: 'auth.login',
+        outcome: 'failure',
+        sourceIp: context.sourceIp ?? '',
+        userAgent: context.userAgent ?? '',
+        reason: 'email_not_verified',
+      });
+      throw new UnauthorizedException(
+        'Please verify your email before signing in. Check your inbox or use Resend verification on the sign-in page.',
+      );
+    }
+
     if (user.lockedUntil && user.lockedUntil.getTime() > Date.now()) {
       await this.logEvent({
         userId: user._id as Types.ObjectId,
@@ -256,9 +383,125 @@ export class AuthService {
     return this.issueSession(user, context, 'auth.login');
   }
 
+  async verifyEmail(
+    verificationId: string,
+    sourceIp = '',
+  ): Promise<{ ok: boolean; message: string }> {
+    if (!verificationId?.trim()) {
+      throw new BadRequestException('Verification link is invalid or expired');
+    }
+
+    const ipKey = sourceIp.trim() || 'unknown';
+    this.passwordResetRateLimiter.assertAllowed('verify-complete', `ip:${ipKey}`);
+
+    const user = await this.authUserModel.findOne({
+      emailVerificationId: verificationId.trim(),
+      emailVerificationExpires: { $gt: new Date() },
+    });
+
+    if (!user) {
+      throw new BadRequestException('Verification link is invalid or has expired');
+    }
+
+    if (user.emailVerified) {
+      return { ok: true, message: 'Email is already verified. You can sign in.' };
+    }
+
+    user.emailVerified = true;
+    user.emailVerifiedAt = new Date();
+    user.emailVerificationId = undefined;
+    user.emailVerificationExpires = undefined;
+    await user.save();
+
+    await this.logEvent({
+      userId: user._id as Types.ObjectId,
+      username: user.username,
+      action: 'auth.email_verified',
+      outcome: 'success',
+      sourceIp,
+    });
+
+    return { ok: true, message: 'Email verified successfully. You can now sign in.' };
+  }
+
+  async getVerificationStatus(identifierInput: string): Promise<{
+    found: boolean;
+    verified: boolean;
+    username?: string;
+  }> {
+    const identifier = identifierInput.trim().toLowerCase();
+    if (!identifier) {
+      throw new BadRequestException('Email or username is required');
+    }
+
+    const user = await this.authUserModel.findOne({
+      $or: [{ username: identifier }, { email: identifier }],
+    });
+
+    if (!user) {
+      return { found: false, verified: false };
+    }
+
+    return {
+      found: true,
+      verified: user.emailVerified === true,
+      username: user.username,
+    };
+  }
+
+  async resendVerificationEmail(
+    identifierInput: string,
+    sourceIp = '',
+  ): Promise<{ message: string; retryAfterSec: number }> {
+    const identifier = identifierInput.trim().toLowerCase();
+    const genericMessage =
+      'If an unverified account exists for that email, a new verification link has been sent.';
+
+    if (!identifier) {
+      throw new BadRequestException('Email or username is required');
+    }
+
+    const ipKey = sourceIp.trim() || 'unknown';
+    const idKey = `id:${PasswordResetRateLimiter.hashIdentifier(identifier)}`;
+    const cooldownSec = Number(
+      this.configService.get<string>('AUTH_EMAIL_VERIFY_RESEND_COOLDOWN_SEC') ?? 60,
+    );
+    const cooldownMs = cooldownSec * 1000;
+
+    this.passwordResetRateLimiter.assertCooldown('verify-resend', idKey, cooldownMs);
+    this.passwordResetRateLimiter.assertAllowed('verify-resend', `ip:${ipKey}`);
+    this.passwordResetRateLimiter.assertAllowed('verify-resend', idKey);
+
+    const user = await this.authUserModel.findOne({
+      $or: [{ username: identifier }, { email: identifier }],
+    });
+
+    if (
+      !user ||
+      !user.isActive ||
+      user.authProvider === 'google' ||
+      user.emailVerified === true ||
+      !user.email
+    ) {
+      return { message: genericMessage, retryAfterSec: cooldownSec };
+    }
+
+    const sent = await this.issueEmailVerification(user.username, sourceIp, {
+      invalidatePrevious: true,
+    });
+    if (!sent) {
+      throw new ServiceUnavailableException(
+        'We could not send the verification email right now. Please try again in a minute.',
+      );
+    }
+    this.passwordResetRateLimiter.recordCooldown('verify-resend', idKey, cooldownMs);
+    return { message: genericMessage, retryAfterSec: cooldownSec };
+  }
+
   async requestPasswordReset(
     identifierInput: string,
-  ): Promise<{ message: string; devResetUrl?: string; emailSent?: boolean }> {
+    sourceIp = '',
+  ): Promise<{ message: string }> {
     const identifier = identifierInput.trim().toLowerCase();
     const genericMessage =
       'If an account exists for that username or email, password reset instructions have been sent.';
@@ -266,6 +509,13 @@ export class AuthService {
     if (!identifier) {
       throw new BadRequestException('Username or email is required');
     }
+
+    const ipKey = sourceIp.trim() || 'unknown';
+    this.passwordResetRateLimiter.assertAllowed('request', `ip:${ipKey}`);
+    this.passwordResetRateLimiter.assertAllowed(
+      'request',
+      `id:${PasswordResetRateLimiter.hashIdentifier(identifier)}`,
+    );
 
     const user = await this.authUserModel.findOne({
       $or: [{ username: identifier }, { email: identifier }],
@@ -275,8 +525,8 @@ export class AuthService {
       return { message: genericMessage };
     }
 
-    const resetToken = randomBytes(32).toString('hex');
-    user.passwordResetTokenHash = this.hashResetToken(resetToken);
+    const resetId = randomBytes(32).toString('hex');
+    user.passwordResetId = resetId;
     user.passwordResetExpires = new Date(
       Date.now() + PASSWORD_RESET_EXPIRES_MINUTES * 60 * 1000,
     );
@@ -302,10 +552,18 @@ export class AuthService {
       return { message: genericMessage };
     }
 
-    const resetUrl = `${publicAppUrl}/login?resetToken=${encodeURIComponent(resetToken)}`;
+    const resetUrl = `${publicAppUrl}/login?reset=${encodeURIComponent(resetId)}`;
     const recipient = user.email?.trim().toLowerCase();
 
-    if (this.mailService.isConfigured() && recipient) {
+    if (!recipient) {
+      this.logger.warn(
+        `Password reset for "${user.username}": no email on account — register with an email or add one via Admin Console.`,
+      );
+    } else if (!this.mailService.isConfigured()) {
+      this.logger.warn(
+        'SMTP is not configured (SMTP_HOST, SMTP_USER, SMTP_PASS). Password reset email was not sent.',
+      );
+    } else {
       try {
         await this.mailService.sendPasswordResetEmail({
           to: recipient,
@@ -320,11 +578,6 @@ export class AuthService {
           outcome: 'success',
           metadata: { to: recipient },
         });
-        return {
-          message:
-            'If an account exists for that address, a password reset email has been sent. Check your inbox and spam folder.',
-          emailSent: true,
-        };
       } catch (err) {
         const reason = err instanceof Error ? err.message : 'unknown_error';
         this.logger.error(`Failed to send password reset email to ${recipient}: ${reason}`);
@@ -337,58 +590,52 @@ export class AuthService {
           metadata: { to: recipient },
         });
       }
-    } else if (!recipient) {
-      this.logger.warn(
-        `Password reset requested for ${user.username} but no email is on file. Add an email to the account or use Google sign-in.`,
-      );
-    } else if (!this.mailService.isConfigured()) {
-      this.logger.warn(
-        'SMTP is not configured (SMTP_HOST, SMTP_USER, SMTP_PASS). Password reset email was not sent.',
-      );
     }
 
-    let devResetUrl: string | undefined;
     if (exposeDevLink) {
-      devResetUrl = resetUrl;
-      this.logger.log(`[auth] Dev password reset link for ${user.username}: ${devResetUrl}`);
+      this.logger.log(`[auth] Dev password reset link for ${user.username}: ${resetUrl}`);
     }
 
-    return { message: genericMessage, devResetUrl, emailSent: false };
+    return { message: genericMessage };
   }
 
-  async resetPassword(token: string, newPassword: string): Promise<{ ok: boolean; message: string }> {
-    if (!token?.trim()) {
-      throw new BadRequestException('Reset token is required');
+  async resetPassword(
+    resetId: string,
+    newPassword: string,
+    sourceIp = '',
+  ): Promise<{ ok: boolean; message: string }> {
+    if (!resetId?.trim()) {
+      throw new BadRequestException('Reset link is invalid or expired');
     }
-    if (newPassword.length < MIN_PASSWORD_LENGTH) {
-      throw new BadRequestException(
-        `Password must be at least ${MIN_PASSWORD_LENGTH} characters`,
-      );
+    const passwordError = passwordPolicyErrorMessage(newPassword);
+    if (passwordError) {
+      throw new BadRequestException(passwordError);
     }
 
-    const users = await this.authUserModel
-      .find({
-        passwordResetExpires: { $gt: new Date() },
-        passwordResetTokenHash: { $exists: true },
-      })
-      .limit(50)
-      .exec();
+    const ipKey = sourceIp.trim() || 'unknown';
+    this.passwordResetRateLimiter.assertAllowed('complete', `ip:${ipKey}`);
 
-    const user = users.find((candidate) =>
-      this.verifyResetToken(token.trim(), candidate.passwordResetTokenHash),
-    );
+    const user = await this.authUserModel.findOne({
+      passwordResetId: resetId.trim(),
+      passwordResetExpires: { $gt: new Date() },
+    });
 
     if (!user) {
-      throw new BadRequestException('Invalid or expired reset token');
+      throw new BadRequestException('Invalid or expired reset link');
     }
 
     user.passwordHash = this.hashPassword(newPassword);
     user.passwordChangedAt = new Date();
-    user.passwordResetTokenHash = undefined;
+    user.passwordResetId = undefined;
     user.passwordResetExpires = undefined;
     user.failedLoginAttempts = 0;
     user.lockedUntil = undefined;
     await user.save();
+
+    await this.authSessionModel.updateMany(
+      { userId: user._id, revokedAt: { $exists: false } },
+      { $set: { revokedAt: new Date() } },
+    );
 
     await this.logEvent({
       userId: user._id as Types.ObjectId,
@@ -443,6 +690,8 @@ export class AuthService {
         authProvider: 'google',
         role: 'security_analyst',
         isActive: true,
+        emailVerified: true,
+        emailVerifiedAt: new Date(),
         lastLoginAt: new Date(),
       });
       await this.logEvent({
@@ -464,6 +713,10 @@ export class AuthService {
       if (!user.email) {
         user.email = email;
       }
+      user.emailVerified = true;
+      user.emailVerifiedAt = user.emailVerifiedAt ?? new Date();
+      user.emailVerificationId = undefined;
+      user.emailVerificationExpires = undefined;
       if (user.authProvider !== 'google') {
         user.authProvider = 'google';
       }
@@ -487,6 +740,11 @@ export class AuthService {
     }
     const user = await this.authUserModel.findById(payload.sub);
     if (!user) throw new NotFoundException('User not found');
+    if (this.mustVerifyEmailBeforeLogin(user)) {
+      throw new UnauthorizedException(
+        'Please verify your email before signing in.',
+      );
+    }
     const newSessionId = randomBytes(16).toString('hex');
     session.revokedAt = new Date();
     await session.save();
@@ -709,10 +967,9 @@ export class AuthService {
     userAgent?: string;
   }): Promise<{ username: string; passwordReset: boolean }> {
     const username = input.username.trim().toLowerCase();
-    if (input.password.length < MIN_PASSWORD_LENGTH) {
-      throw new BadRequestException(
-        `Password must be at least ${MIN_PASSWORD_LENGTH} characters`,
-      );
+    const passwordError = passwordPolicyErrorMessage(input.password);
+    if (passwordError) {
+      throw new BadRequestException(passwordError);
     }
 
     const user = await this.authUserModel.findOne({ username });
@@ -720,6 +977,8 @@ export class AuthService {
 
     user.passwordHash = this.hashPassword(input.password);
     user.passwordChangedAt = new Date();
+    user.passwordResetId = undefined;
+    user.passwordResetExpires = undefined;
     user.failedLoginAttempts = 0;
     user.lockedUntil = undefined;
     await user.save();
@@ -833,6 +1092,91 @@ export class AuthService {
     };
   }
 
+  private getPublicAppUrl(): string {
+    return (this.configService.get<string>('APP_PUBLIC_URL') ?? '').replace(/\/$/, '');
+  }
+
+  private mustVerifyEmailBeforeLogin(user: AuthUser): boolean {
+    return (
+      user.authProvider === 'local' &&
+      user.role === 'security_analyst' &&
+      user.emailVerified !== true
+    );
+  }
+
+  private async issueEmailVerification(
+    username: string,
+    sourceIp: string,
+    options?: { invalidatePrevious?: boolean },
+  ): Promise<boolean> {
+    const user = await this.authUserModel.findOne({ username: username.trim().toLowerCase() });
+    if (!user?.email || user.emailVerified === true) {
+      return false;
+    }
+
+    const verificationId = randomBytes(32).toString('hex');
+    const expiresAt = new Date(
+      Date.now() + EMAIL_VERIFICATION_EXPIRES_HOURS * 60 * 60 * 1000,
+    );
+
+    const publicAppUrl = this.getPublicAppUrl();
+    if (!publicAppUrl) {
+      this.logger.warn('APP_PUBLIC_URL is not set; verification links cannot be built.');
+      return false;
+    }
+
+    const recipient = user.email.trim().toLowerCase();
+    const verifyUrl = `${publicAppUrl}/login?verify=${encodeURIComponent(verificationId)}`;
+
+    if (!this.mailService.isConfigured()) {
+      this.logger.warn('SMTP is not configured; verification email was not sent.');
+      return false;
+    }
+
+    const hadPreviousLink = Boolean(user.emailVerificationId);
+
+    try {
+      await this.mailService.sendEmailVerificationEmail({
+        to: recipient,
+        username: user.username,
+        verifyUrl,
+        expiresHours: EMAIL_VERIFICATION_EXPIRES_HOURS,
+      });
+    } catch (err) {
+      const reason = err instanceof Error ? err.message : 'unknown_error';
+      this.logger.error(`Failed to send verification email to ${recipient}: ${reason}`);
+      await this.logEvent({
+        userId: user._id as Types.ObjectId,
+        username: user.username,
+        action: 'auth.email_verification_sent',
+        outcome: 'failure',
+        reason,
+        sourceIp,
+        metadata: { to: recipient },
+      });
+      return false;
+    }
+
+    // Only persist the new token after SMTP succeeds — previous links stay valid on send failure.
+    user.emailVerificationId = verificationId;
+    user.emailVerificationExpires = expiresAt;
+    await user.save();
+
+    await this.logEvent({
+      userId: user._id as Types.ObjectId,
+      username: user.username,
+      action: 'auth.email_verification_sent',
+      outcome: 'success',
+      sourceIp,
+      metadata: {
+        to: recipient,
+        previousLinkInvalidated:
+          options?.invalidatePrevious === true && hadPreviousLink,
+      },
+    });
+    return true;
+  }
+
   private async allocateUsernameFromEmail(email: string, googleId: string): Promise<string> {
     const localPart = email.split('@')[0] ?? 'user';
     const base =
@@ -846,21 +1190,6 @@ export class AuthService {
       candidate = `${base}${suffix}`;
     }
     return candidate;
-  }
-
-  private hashResetToken(token: string): string {
-    const salt = randomBytes(16).toString('hex');
-    const digest = scryptSync(token, salt, 64).toString('hex');
-    return `${salt}:${digest}`;
-  }
-
-  private verifyResetToken(token: string, storedHash?: string): boolean {
-    if (!storedHash) return false;
-    const [salt, digest] = storedHash.split(':');
-    if (!salt || !digest) return false;
-    const incoming = scryptSync(token, salt, 64);
-    const existing = Buffer.from(digest, 'hex');
-    return incoming.length === existing.length && timingSafeEqual(incoming, existing);
   }
 
   private signToken(payload: AuthJwtPayload, expiresInSec: number, secret: string): string {

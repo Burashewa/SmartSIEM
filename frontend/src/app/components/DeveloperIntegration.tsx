@@ -5,7 +5,7 @@ import { useState } from "react";
 export function DeveloperIntegration() {
   const [copied, setCopied] = useState(false);
 
-  const codeSnippet = `POST /api/logs
+  const codeSnippet = `POST https://your-siem-host/api/logs
 Authorization: Bearer YOUR_AGENT_API_KEY
 Content-Type: application/json
 

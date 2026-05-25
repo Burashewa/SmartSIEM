@@ -20,6 +20,7 @@ type AgentLookupResult = {
   agentId: string;
   name: string;
   userId: string;
+  allowedIps: string[];
 };
 
 type CreateAgentResult = {
@@ -40,7 +41,7 @@ export class AgentsService {
 
   async createAgent(
     userId: string,
-    input: { name: string; storeApiKey?: boolean },
+    input: { name: string; storeApiKey?: boolean; allowedIps?: string[] },
   ): Promise<CreateAgentResult> {
     const name = input.name.trim();
     const storageMode = input.storeApiKey ? 'stored' : 'one_time';
@@ -51,6 +52,7 @@ export class AgentsService {
     const nextState = this.createApiKeyState(storageMode);
     const created = await this.agentModel.create({
       name,
+      allowedIps: this.normalizeAllowedIps(input.allowedIps),
       userId: new Types.ObjectId(userId),
       apiKeyId: nextState.apiKeyId,
       apiKeyHash: nextState.apiKeyHash,
@@ -78,6 +80,7 @@ export class AgentsService {
       apiKeyStorageMode: AgentApiKeyStorageMode;
       storedApiKeyAvailable: boolean;
       apiKeyPreview: string;
+      allowedIps: string[];
       createdAt?: Date;
       updatedAt?: Date;
     }>
@@ -94,6 +97,7 @@ export class AgentsService {
       apiKeyStorageMode: agent.apiKeyStorageMode ?? 'one_time',
       storedApiKeyAvailable: (agent.apiKeyStorageMode ?? 'one_time') === 'stored',
       apiKeyPreview: this.buildApiKeyPreview(agent.apiKeyId),
+      allowedIps: agent.allowedIps ?? [],
       createdAt: agent.createdAt,
       updatedAt: agent.updatedAt,
     }));
@@ -120,23 +124,28 @@ export class AgentsService {
   async updateAgent(
     userId: string,
     agentId: string,
-    input: { name?: string },
+    input: { name?: string; allowedIps?: string[] },
   ): Promise<{
     agentId: string;
     name: string;
     apiKeyStorageMode: AgentApiKeyStorageMode;
     storedApiKeyAvailable: boolean;
     apiKeyPreview: string;
+    allowedIps: string[];
     createdAt?: Date;
     updatedAt?: Date;
   }> {
     const agent = await this.findOwnedAgent(userId, agentId);
     const name = input.name?.trim();
-    if (!name) {
-      throw new BadRequestException('Agent name is required');
+    if (name) {
+      agent.name = name;
     }
-
-    agent.name = name;
+    if (input.allowedIps !== undefined) {
+      agent.allowedIps = this.normalizeAllowedIps(input.allowedIps);
+    }
+    if (!name && input.allowedIps === undefined) {
+      throw new BadRequestException('Agent name or allowedIps is required');
+    }
     await agent.save();
 
     return {
@@ -145,6 +154,7 @@ export class AgentsService {
       apiKeyStorageMode: agent.apiKeyStorageMode ?? 'one_time',
       storedApiKeyAvailable: (agent.apiKeyStorageMode ?? 'one_time') === 'stored',
       apiKeyPreview: this.buildApiKeyPreview(agent.apiKeyId),
+      allowedIps: agent.allowedIps ?? [],
       createdAt: agent.createdAt,
       updatedAt: agent.updatedAt,
     };
@@ -209,7 +219,13 @@ export class AgentsService {
       agentId: agent.agentId,
       name: agent.name,
       userId: String(agent.userId),
+      allowedIps: agent.allowedIps ?? [],
     };
+  }
+
+  private normalizeAllowedIps(allowedIps?: string[]): string[] {
+    if (!allowedIps?.length) return [];
+    return [...new Set(allowedIps.map((ip) => ip.trim()).filter(Boolean))];
   }
 
   private async findOwnedAgent(

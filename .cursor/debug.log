@@ -1,4 +1,0 @@
-{"runId":"run1","hypothesisId":"H1","location":"alerts.controller.ts:updateStatus:entry","message":"Entered updateStatus","data":{"id":"6a090b58245850cf952a86fe","status":"investigating"},"timestamp":1779007130727}
-{"runId":"run1","hypothesisId":"H4","location":"alerts.controller.ts:updateStatus:success","message":"Alert status updated","data":{"id":"6a090b58245850cf952a86fe","status":"investigating"},"timestamp":1779007131050}
-{"runId":"run1","hypothesisId":"H1","location":"alerts.controller.ts:updateStatus:entry","message":"Entered updateStatus","data":{"id":"6a090b58245850cf952a86fe","status":"resolved"},"timestamp":1779007165297}
-{"runId":"run1","hypothesisId":"H4","location":"alerts.controller.ts:updateStatus:success","message":"Alert status updated","data":{"id":"6a090b58245850cf952a86fe","status":"resolved"},"timestamp":1779007165579}

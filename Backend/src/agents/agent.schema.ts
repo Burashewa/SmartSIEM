@@ -48,6 +48,10 @@ export class Agent extends Document {
   })
   userId!: Types.ObjectId;
 
+  /** When set, ingest is only accepted from these IPs (empty = no per-agent restriction). */
+  @Prop({ type: [String], default: [] })
+  allowedIps!: string[];
+
   createdAt?: Date;
   updatedAt?: Date;
 }

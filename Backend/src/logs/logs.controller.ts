@@ -4,6 +4,8 @@ import { CreateLogDto } from './log.dto';
 import { Roles } from '../auth/decorators/roles.decorator';
 import { Public } from '../auth/decorators/public.decorator';
 import { AgentApiKeyGuard } from '../agents/guards/agent-api-key.guard';
+import { AgentTransportGuard } from '../agents/guards/agent-transport.guard';
+import { AgentIngestPolicyGuard } from '../agents/guards/agent-ingest-policy.guard';
 import { AuthJwtPayload } from '../auth/auth.types';
 
 type AuthenticatedRequest = {
@@ -12,6 +14,7 @@ type AuthenticatedRequest = {
     agentId: string;
     name: string;
     userId: string;
+    allowedIps?: string[];
   };
 };
 
@@ -22,7 +25,7 @@ export class LogsController {
   // POST /api/logs
   @Public()
   @Post()
-  @UseGuards(AgentApiKeyGuard)
+  @UseGuards(AgentTransportGuard, AgentApiKeyGuard, AgentIngestPolicyGuard)
   async ingest(@Body() dto: CreateLogDto, @Req() request: AuthenticatedRequest) {
     return this.logsService.ingest(dto, request.agent!);
   }

@@ -21,18 +21,39 @@ interface RefreshResponse {
   expiresInSec: number;
 }
 
-interface RegisterResponse {
+export interface RegisterResponse {
   ok: boolean;
   user: {
     username: string;
     role: SiemRole;
+    email?: string;
   };
+  message: string;
+  verificationEmailSent: boolean;
+}
+
+interface VerifyEmailResponse {
+  ok: boolean;
+  message: string;
+}
+
+interface ResendVerificationResponse {
+  message: string;
+  retryAfterSec?: number;
+}
+
+export class ResendVerificationError extends Error {
+  retryAfterSec: number;
+
+  constructor(message: string, retryAfterSec: number) {
+    super(message);
+    this.name = 'ResendVerificationError';
+    this.retryAfterSec = retryAfterSec;
+  }
 }
 
 interface ForgotPasswordResponse {
   message: string;
-  devResetUrl?: string;
-  emailSent?: boolean;
 }
 
 interface ResetPasswordResponse {
@@ -190,6 +211,68 @@ export async function register(
   return (await response.json()) as RegisterResponse;
 }
 
+export async function verifyEmail(verificationId: string): Promise<VerifyEmailResponse> {
+  const response = await fetch('/api/auth/verify-email', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ verificationId }),
+  });
+  if (!response.ok) {
+    throw new Error(
+      await readErrorMessage(response, `Email verification failed (${response.status})`),
+    );
+  }
+  return (await response.json()) as VerifyEmailResponse;
+}
+
+export async function getVerificationStatus(
+  identifier: string,
+): Promise<{ found: boolean; verified: boolean; username?: string }> {
+  const response = await fetch('/api/auth/verification-status', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ identifier }),
+  });
+  if (!response.ok) {
+    throw new Error(
+      await readErrorMessage(response, `Could not check verification status (${response.status})`),
+    );
+  }
+  return (await response.json()) as { found: boolean; verified: boolean; username?: string };
+}
+
+export async function resendVerificationEmail(
+  identifier: string,
+): Promise<ResendVerificationResponse> {
+  const response = await fetch('/api/auth/resend-verification', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ identifier }),
+  });
+  if (!response.ok) {
+    let retryAfterSec = 60;
+    try {
+      const text = await response.text();
+      const body = JSON.parse(text) as { message?: string; retryAfterSec?: number };
+      if (typeof body.retryAfterSec === 'number' && body.retryAfterSec > 0) {
+        retryAfterSec = body.retryAfterSec;
+      }
+      const message =
+        typeof body.message === 'string' && body.message.trim()
+          ? body.message
+          : `Could not resend verification (${response.status})`;
+      throw new ResendVerificationError(message, retryAfterSec);
+    } catch (err) {
+      if (err instanceof ResendVerificationError) throw err;
+      throw new ResendVerificationError(
+        `Could not resend verification (${response.status})`,
+        retryAfterSec,
+      );
+    }
+  }
+  return (await response.json()) as ResendVerificationResponse;
+}
+
 export async function requestPasswordReset(
   identifier: string,
 ): Promise<ForgotPasswordResponse> {
@@ -207,13 +290,13 @@ export async function requestPasswordReset(
 }
 
 export async function resetPassword(
-  token: string,
+  resetId: string,
   password: string,
 ): Promise<ResetPasswordResponse> {
   const response = await fetch('/api/auth/reset-password', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ token, password }),
+    body: JSON.stringify({ resetId, password }),
   });
   if (!response.ok) {
     throw new Error(

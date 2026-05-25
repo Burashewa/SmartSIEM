@@ -16,7 +16,7 @@ export class AuthController {
     @Body() body: {
       username: string;
       password: string;
-      role: 'security_analyst' | 'admin';
+      role?: 'security_analyst' | 'admin';
       email?: string;
     },
     @Req() request: RequestLike,
@@ -24,12 +24,50 @@ export class AuthController {
     const user = await this.authService.registerUser({
       username: body.username,
       password: body.password,
-      role: body.role,
+      role: 'security_analyst',
       email: body.email,
       sourceIp: request.ip ?? '',
       userAgent: request.headers?.['user-agent'] ?? '',
     });
-    return { ok: true, user };
+    return {
+      ok: true,
+      user: {
+        username: user.username,
+        role: user.role,
+        email: user.email,
+      },
+      message: user.message,
+      verificationEmailSent: user.verificationEmailSent,
+    };
+  }
+
+  @Public()
+  @Post('verify-email')
+  async verifyEmail(
+    @Body() body: { verificationId?: string; verify?: string },
+    @Req() request: RequestLike,
+  ) {
+    const verificationId = body.verificationId ?? body.verify ?? '';
+    return this.authService.verifyEmail(verificationId, request.ip ?? '');
+  }
+
+  @Public()
+  @Post('verification-status')
+  async verificationStatus(
+    @Body() body: { email?: string; username?: string; identifier?: string },
+  ) {
+    const identifier = body.identifier ?? body.email ?? body.username ?? '';
+    return this.authService.getVerificationStatus(identifier);
+  }
+
+  @Public()
+  @Post('resend-verification')
+  async resendVerification(
+    @Body() body: { email?: string; username?: string; identifier?: string },
+    @Req() request: RequestLike,
+  ) {
+    const identifier = body.identifier ?? body.email ?? body.username ?? '';
+    return this.authService.resendVerificationEmail(identifier, request.ip ?? '');
   }
 
   @Public()
@@ -46,16 +84,24 @@ export class AuthController {
 
   @Public()
   @Post('forgot-password')
-  async forgotPassword(@Body() body: { username?: string; email?: string; identifier?: string }) {
+  async forgotPassword(
+    @Body() body: { username?: string; email?: string; identifier?: string },
+    @Req() request: RequestLike,
+  ) {
     const identifier = body.identifier ?? body.username ?? body.email ?? '';
-    return this.authService.requestPasswordReset(identifier);
+    return this.authService.requestPasswordReset(identifier, request.ip ?? '');
   }
 
   @Public()
   @Post('reset-password')
-  async resetPassword(@Body() body: { token: string; password: string; newPassword?: string }) {
+  async resetPassword(
+    @Body()
+    body: { resetId?: string; token?: string; password: string; newPassword?: string },
+    @Req() request: RequestLike,
+  ) {
     const password = body.newPassword ?? body.password;
-    return this.authService.resetPassword(body.token, password);
+    const resetId = body.resetId ?? body.token ?? '';
+    return this.authService.resetPassword(resetId, password, request.ip ?? '');
   }
 
   @Public()
@@ -101,6 +147,7 @@ export class AuthController {
       role: body.role,
       actor: request.user?.username ?? 'unknown',
       sourceIp: request.ip ?? '',
+      emailVerified: true,
     });
   }
 

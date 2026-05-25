@@ -14,7 +14,7 @@ export class AgentsController {
 
   @Post()
   async createAgent(
-    @Body() body: { name: string; storeApiKey?: boolean },
+    @Body() body: { name: string; storeApiKey?: boolean; allowedIps?: string[] },
     @Req() request: AuthenticatedRequest,
   ) {
     return this.agentsService.createAgent(request.user!.sub, body);
@@ -36,7 +36,7 @@ export class AgentsController {
   @Put(':agentId')
   async updateAgent(
     @Param('agentId') agentId: string,
-    @Body() body: { name: string },
+    @Body() body: { name?: string; allowedIps?: string[] },
     @Req() request: AuthenticatedRequest,
   ) {
     return this.agentsService.updateAgent(request.user!.sub, agentId, body);

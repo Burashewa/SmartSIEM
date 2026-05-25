@@ -6,7 +6,6 @@ export const ANALYST_PAGE_IDS = [
   'logs',
   'alerts-and-threats',
   'threat-intelligence',
-  'detection-rules',
   'ai-recommendations',
   'investigations',
   'reports',
@@ -14,7 +13,7 @@ export const ANALYST_PAGE_IDS = [
 ] as const;
 
 /** Platform governance — administrators only. */
-export const ADMIN_PAGE_IDS = ['admin'] as const;
+export const ADMIN_PAGE_IDS = ['admin', 'detection-rules'] as const;
 
 export type AnalystPageId = (typeof ANALYST_PAGE_IDS)[number];
 export type AdminPageId = (typeof ADMIN_PAGE_IDS)[number];
@@ -27,7 +26,7 @@ const PAGE_ROLES: Record<AppPageId, readonly SiemRole[]> = {
   logs: ['security_analyst'],
   'alerts-and-threats': ['security_analyst'],
   'threat-intelligence': ['security_analyst'],
-  'detection-rules': ['security_analyst'],
+  'detection-rules': ['admin'],
   'ai-recommendations': ['security_analyst'],
   investigations: ['security_analyst'],
   reports: ['security_analyst'],

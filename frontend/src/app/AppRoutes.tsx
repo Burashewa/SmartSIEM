@@ -73,12 +73,19 @@ function LoginRoute() {
     }
   };
 
-  const handleRegister = async (username: string, password: string, email?: string) => {
+  const handleRegister = async (username: string, password: string, email: string) => {
     setIsLoggingIn(true);
     setLoginError(null);
     try {
-      await registerRequest(username, password, 'security_analyst', email);
-      await finishLogin(username, password);
+      const result = await registerRequest(username, password, 'security_analyst', email);
+      return {
+        message:
+          result.message ||
+          (result.verificationEmailSent
+            ? 'Account created. Check your email for a verification link before signing in.'
+            : 'Account created but verification email could not be sent. Use Resend verification after checking SMTP settings.'),
+        verificationEmailSent: result.verificationEmailSent,
+      };
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Unable to register';
       setLoginError(message);
@@ -128,7 +135,7 @@ export function AppRoutes() {
       <Route path="/logs" element={wrapAnalyst(<LogManagementPage />)} />
       <Route path="/alerts-and-threats" element={wrapAnalyst(<AlertsAndThreatPage />)} />
       <Route path="/threat-intelligence" element={wrapAnalyst(<ThreatIntelligencePage />)} />
-      <Route path="/detection-rules" element={wrapAnalyst(<DetectionRulesPage />)} />
+      <Route path="/detection-rules" element={wrapAdmin(<DetectionRulesPage />)} />
       <Route path="/investigations" element={wrapAnalyst(<InvestigationsPage />)} />
       <Route path="/ai-recommendations" element={wrapAnalyst(<AIRecommendationsPage />)} />
       <Route path="/reports" element={wrapAnalyst(<ReportsPage />)} />

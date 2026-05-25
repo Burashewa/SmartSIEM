@@ -171,14 +171,16 @@ export function Header({ username, role, onLogout }: HeaderProps) {
 
       {/* RIGHT SECTION */}
       <div className="flex items-center gap-2 ml-auto">
-        <Link
-          to="/settings?createAgent=true"
-          className="flex items-center gap-2 px-3 py-1.5 bg-[#1f2937] border border-[#2a2a3a] text-sm text-white rounded-md hover:bg-[#272f3f] transition-colors"
-          title="Create agent"
-        >
-          <Plus className="size-4" />
-          <span>Create Agent</span>
-        </Link>
+        {role === 'security_analyst' ? (
+          <Link
+            to="/settings?createAgent=true"
+            className="flex items-center gap-2 px-3 py-1.5 bg-[#1f2937] border border-[#2a2a3a] text-sm text-white rounded-md hover:bg-[#272f3f] transition-colors"
+            title="Create agent"
+          >
+            <Plus className="size-4" />
+            <span>Create Agent</span>
+          </Link>
+        ) : null}
 
         <DropdownMenu>
           <DropdownMenuTrigger asChild>

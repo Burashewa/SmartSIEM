@@ -21,6 +21,19 @@ export class AuthUser extends Document {
   @Prop({ type: String, lowercase: true, trim: true, index: true })
   email?: string;
 
+  @Prop({ type: Boolean, default: false })
+  emailVerified?: boolean;
+
+  /** Single-use token id in verification link (?verify=...). */
+  @Prop({ type: String, sparse: true, index: true })
+  emailVerificationId?: string;
+
+  @Prop({ type: Date })
+  emailVerificationExpires?: Date;
+
+  @Prop({ type: Date })
+  emailVerifiedAt?: Date;
+
   @Prop({ type: String, enum: SIEM_ROLES, required: true, default: 'security_analyst', index: true })
   role!: SiemRole;
 
@@ -39,8 +52,9 @@ export class AuthUser extends Document {
   @Prop({ type: Date })
   passwordChangedAt?: Date;
 
-  @Prop({ type: String })
-  passwordResetTokenHash?: string;
+  /** High-entropy single-use id embedded in reset link (?reset=...). */
+  @Prop({ type: String, sparse: true, index: true })
+  passwordResetId?: string;
 
   @Prop({ type: Date })
   passwordResetExpires?: Date;

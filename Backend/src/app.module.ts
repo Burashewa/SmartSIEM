@@ -51,7 +51,11 @@ function resolveEnvFilePaths(): string[] {
           );
         }
 
-        return { uri: mongoUri };
+        const dbName = (configService.get<string>('DB_NAME') ?? 'SIEM')
+          .replace(/^["']|["']$/g, '')
+          .trim();
+
+        return { uri: mongoUri, dbName };
       },
     }),
     LogsModule,
